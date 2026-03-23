@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Protein Finder</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 2rem;
+      background: #f7f4ed;
+      color: #1f1f1f;
+    }
+
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+      background: #fffdf8;
+      border: 1px solid #d9d1bf;
+      border-radius: 16px;
+      padding: 2rem;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
+    }
+
+    h1 {
+      margin-top: 0;
+    }
+
+    button {
+      border: 0;
+      border-radius: 999px;
+      background: #205c3b;
+      color: white;
+      padding: 0.85rem 1.2rem;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+
+    pre {
+      background: #f3eee2;
+      padding: 1rem;
+      border-radius: 12px;
+      overflow: auto;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Protein Finder</h1>
+    <p>This starter page is only here to test browser geolocation before we connect maps and search.</p>
+    <button id="locate-btn" type="button">Use my location</button>
+    <pre id="result">Waiting for location permission...</pre>
+  </main>
+  <script>
+    const button = document.getElementById("locate-btn");
+    const result = document.getElementById("result");
+
+    button.addEventListener("click", () => {
+      if (!navigator.geolocation) {
+        result.textContent = "Geolocation is not supported in this browser.";
+        return;
+      }
+
+      result.textContent = "Requesting your location...";
+
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude, accuracy } = position.coords;
+
+          result.textContent = "Sending coordinates to the server...";
+
+          const response = await fetch("/api/location", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              latitude,
+              longitude
+            })
+          });
+          console.log("Server response status:", response.status);
+
+          const data = await response.json();
+
+          result.textContent = JSON.stringify(
+            {
+              browser_coords: { latitude, longitude, accuracy },
+              backend_response: data
+            },
+            null,
+            2
+          );
+        },
+        (error) => {
+          result.textContent = `Location error: ${error.message}`;
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    });
+  </script>
+</body>
+</html>
