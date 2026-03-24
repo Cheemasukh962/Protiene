@@ -2,19 +2,33 @@
 
 Protein Finder is a Python-first app for finding protein-friendly places and food options near a user.
 
+## Project Direction
+
+This project is being built with a backend-first mindset:
+
+- Frontend stays thin
+- Backend owns validation, external API calls, ranking, and business logic
+- Features should be built in a way that shows system design thinking, not just UI work
+
+The near-term goal is to:
+
+1. Request the user's browser coordinates
+2. Compare those coordinates against predetermined campus eating locations
+3. Return the nearest matching location from the backend
+4. Later add Google Maps APIs for reverse geocoding, typed location search, and map display
+
 ## Current Architecture
 
 - Backend: `FastAPI`
 - Frontend: static `HTML + JavaScript`
 - Python environment: local `.venv`
-- Design rule:
-  - Frontend handles browser permission, small input tasks, and display
-  - Backend handles validation, API calls, ranking, and business logic
+- Testing: `pytest`
 
 ## Current Files
 
 - Backend app: `backend/app/main.py`
 - Frontend starter page: `backend/app/static/index.html`
+- Tests: `tests/test_distance.py`
 - Dependencies: `requirements.txt`
 
 ## What Works Right Now
@@ -22,17 +36,78 @@ Protein Finder is a Python-first app for finding protein-friendly places and foo
 - `GET /` serves the starter page
 - `GET /api/health` returns a health response
 - `POST /api/location` accepts browser coordinates
-- The browser can request the user location and send `latitude` and `longitude` to the backend
+- `GET /api/campus_locations` returns a list of predetermined campus food locations
+- `POST /api/campus/nearest` returns the nearest campus location based on user coordinates
+- The backend can calculate distance between two coordinate points using the Haversine formula
+- Automated tests cover both the distance helper and the nearest-location endpoint
+
+## What We Added In This Session
+
+We moved from basic geolocation capture into backend location logic.
+
+### Backend improvements
+
+- Added a `CampusLocation` model
+- Added a `CampusLocationDistance` model
+- Added a small in-memory campus dataset:
+  - `Silo`
+  - `Segundo DC`
+  - `Memorial Union Market`
+- Added `calculate_distance_miles(...)` using the Haversine formula
+- Added `build_location_distance(...)` helper
+- Added `POST /api/campus/nearest` to return the closest campus location
+
+### Testing improvements
+
+- Added a `tests/` folder
+- Added `tests/test_distance.py`
+- Added `pytest` to `requirements.txt`
+- Added tests for:
+  - same coordinates returning zero distance
+  - symmetric distance behavior
+  - positive distance for different coordinates
+  - nearest campus location API behavior
 
 ## Current Backend Flow
 
 1. Browser requests geolocation permission
 2. Frontend gets `latitude` and `longitude`
-3. Frontend sends a `POST` request to `/api/location`
+3. Frontend can send coordinates to the backend
 4. FastAPI validates the JSON using a Pydantic model
-5. Backend returns JSON back to the page
+5. Backend can compare the user location against campus food locations
+6. Backend returns the nearest location as JSON
+
+## Distance Logic
+
+The current project uses the Haversine formula to compare two latitude/longitude points on Earth.
+
+Why this was chosen:
+
+- Good for nearest-location comparison
+- Simple and correct for MVP distance checks
+- Better fit than Dijkstra's algorithm for this stage
+
+Dijkstra's algorithm would only make sense later if the app models actual campus walking paths or route networks.
 
 ## Run The Project
+
+Create the virtual environment:
+
+```powershell
+python -m venv .venv
+```
+
+Activate it:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Install dependencies:
+
+```powershell
+pip install -r requirements.txt
+```
 
 Start the server:
 
@@ -52,214 +127,79 @@ Open in browser:
 http://127.0.0.1:8000/
 ```
 
-## Key Learning Notes
+## Run Tests
 
-- `@app.get(...)` and `@app.post(...)` create routes
-- Pydantic models define and validate incoming JSON
-- `print(...)` in Python shows in the terminal
-- `console.log(...)` in JavaScript shows in the browser console
-- `result.textContent = ...` updates the page
+Run the distance and API tests:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_distance.py
+```
+
+Expected result right now:
+
+- 4 tests passing
+
+## Setup On Another Computer
+
+To continue this project on another computer:
+
+1. Clone or copy the project folder
+2. Open the project in your editor
+3. Create a virtual environment:
+
+```powershell
+python -m venv .venv
+```
+
+4. Activate it:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+5. Install dependencies:
+
+```powershell
+pip install -r requirements.txt
+```
+
+6. Start the server:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --reload
+```
+
+7. Run tests:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_distance.py
+```
 
 ## Next Steps
 
-1. Confirm the coordinate flow works end-to-end
-2. Add simple backend logging for received coordinates
-3. Set up environment variable support for API keys
-4. Integrate Google Maps Platform from the backend
-5. Start with reverse geocoding:
-   - coordinates -> readable place/address
-6. Then add nearby place search
-7. Keep the frontend thin and move important logic into Python services/modules
+The next recommended steps are:
 
-## Planned Google Maps Usage
+1. Update the frontend to call `POST /api/campus/nearest`
+2. Show the nearest campus dining location on the page
+3. Add more campus food locations to the backend dataset
+4. Return the top 3 nearest locations instead of only one
+5. Add reverse geocoding from Google Maps API
+6. Add typed location search
+7. Later add actual map rendering
 
-Most likely Google services to use next:
+## Recommended Next Coding Milestone
 
-- Geocoding API
-- Places API
-- Maps JavaScript API
+The best next milestone is:
 
-Recommended pattern:
+- user clicks `Use my location`
+- frontend sends coordinates to `POST /api/campus/nearest`
+- backend returns the closest campus food location
+- frontend displays the result cleanly
 
-1. Frontend gets browser coordinates
-2. Frontend sends them to the backend
-3. Backend calls Google APIs
-4. Backend returns cleaned app-specific data
-5. Frontend displays the result
+If that works, the app has a real backend-driven location feature before Google Maps is added.
 
 ## Good Prompt To Resume Later
 
 ```text
-We are building Protein Finder with a Python-first backend using FastAPI. The frontend should stay thin. The app already has:
-- GET /
-- GET /api/health
-- POST /api/location
-and the frontend can request browser geolocation and POST latitude/longitude to the backend.
-
-Next I want to integrate Google Maps Platform from the backend first, starting with reverse geocoding coordinates into a readable location. Please inspect the current files and continue from there.
+We are building Protein Finder with a Python-first FastAPI backend and a thin frontend. The app already supports browser geolocation, a campus location dataset, Haversine distance calculation, and a POST /api/campus/nearest route that returns the closest campus food location. Tests exist in tests/test_distance.py and currently pass. Next I want to connect the frontend to /api/campus/nearest and then continue toward Google Maps integration from the backend first.
 ```
-
-
-
-Use browser Geolocation API for “use my current location”
-Use Google Maps Platform for map display + place search + autocomplete
-Do not use Gemini for mapping itself
-Why: Gemini is an AI model, not your core map/location engine. Google Maps Platform is the actual mapping product. If your goal is “user opens site, shares location, sees correct place on map, searches nearby places,” Google’s mapping stack is the simplest MVP.
-
-A good MVP stack would be:
-
-navigator.geolocation for current location
-Places Autocomplete for typed locations
-Geocoding API for address-to-coordinates
-Maps JavaScript API for the map
-Nearby Search if you want nearby stores/restaurants/gyms/etc.
-When AWS makes sense:
-
-If the rest of your app is heavily on AWS
-If you want MapLibre + AWS infra
-If lower-level control matters more than fastest setup
-One important note: Google’s own Geolocation API is mainly for devices that do not already provide native geolocation; for normal websites, Google recommends HTML5/browser geolocation instead. Source: https://developers.google.com/maps/documentation/geolocation/overview
-
-So the short answer is:
-
-User current location -> Browser Geolocation API
-Typed location to real place -> Google Geocoding/Places or AWS Geocode
-Render the map -> Google Maps JS API or AWS Location + MapLibre
-Best beginner MVP -> Browser Geolocation + Google Maps Platform
-If you want, I can next lay out the exact API combo and architecture for Protein Finder in a simple MVP plan, or scaffold the first page for it.
-
-
-Yes lets lay out a plan first
-
-
-MVP Plan
-
-For Protein Finder, I’d keep the first version very focused: let a user share their location or type an address, show that spot on a map, and then find nearby high-protein food options.
-
-Phase 1
-Build the location and map foundation first.
-
-User opens the site.
-They choose either:
-Use my current location
-Enter an address
-The app converts that into latitude/longitude.
-The app shows the location on a map.
-The app searches nearby places.
-The app shows a simple list + map pins.
-Recommended Tech Stack
-
-For the simplest MVP:
-
-Frontend: Next.js or React
-Styling: Tailwind CSS
-Maps: Google Maps Platform
-User current location: browser Geolocation API
-Typed location: Google Places Autocomplete
-Coordinates lookup: Google Geocoding API
-Nearby business search: Google Places Nearby Search
-Database later: Supabase or Postgres
-If you want the easiest path, I’d choose Next.js + Google Maps Platform.
-
-Feature Order
-
-Location input
-
-Button for current location
-Search bar for typed address
-Save returned lat/lng
-Map rendering
-
-Center map on user location
-Drop a marker on selected position
-Nearby place results
-
-Search within a radius
-Start with categories like:
-grocery stores
-restaurants
-smoothie shops
-supplement stores
-Protein Finder logic
-
-First MVP can be manual/simple:
-tag places by category
-optionally search by keywords like protein, healthy, gym cafe, meal prep
-Later versions can become smarter with menu/item analysis
-Results UI
-
-Map pins
-Cards with:
-place name
-address
-distance
-rating
-open/closed if available
-Architecture
-
-Frontend:
-
-Handles UI, map, and permission for browser location
-Backend:
-
-Stores API key safely
-Calls Google APIs if needed
-Can later cache places/results
-Basic flow:
-
-Browser gets current location or typed address
-Frontend sends location to backend or directly to allowed map APIs
-App receives nearby places
-UI renders pins and result cards
-Best First Build Milestone
-
-Your first milestone should be just this:
-
-User clicks Use my location
-Map centers correctly
-App shows nearby places in a 2–5 mile radius
-If that works, the core of the product is alive.
-
-After MVP
-
-Once that is working, next upgrades could be:
-
-Filters like high protein, cheap, open now, fast food, healthy
-Saved favorite spots
-User accounts
-Menu-level protein estimates
-AI recommendations based on goals like bulking, cutting, high protein under 600 calories
-Suggested Build Roadmap
-
-Week 1:
-
-Set up app
-Add map
-Add current location
-Add typed address search
-Week 2:
-
-Add nearby search
-Show map pins + cards
-Add distance sorting
-Week 3:
-
-Add protein-related filters
-Improve UI
-Add basic backend structure
-Important Decision
-
-Before coding, we should choose one of these paths:
-
-Fastest MVP: Next.js + Google Maps Platform
-AWS-first: Next.js + Amazon Location + MapLibre
-Lower-cost/custom: Next.js + Mapbox
-I recommend Option 1 for your first version because it’s the most straightforward and best documented.
-
-If you want, I can next turn this into a proper project blueprint with:
-
-app pages
-component list
-API list
-database schema
-step-by-step build order
