@@ -115,7 +115,10 @@ def get_nearest_campus_location(
 
 @app.post("/api/location")
 def receive_location(location: LocationCoordinates) -> dict[str, float | str]:
-    print(f"Received location: Latitude={location.latitude}, Longitude={location.longitude}")
+    print(
+        f"Received location: Latitude={location.latitude}, Longitude={location.longitude}",
+        flush=True,
+    )
     return {
         "message": "Location received successfully",
         "latitude": location.latitude,

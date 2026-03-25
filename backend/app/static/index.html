@@ -70,7 +70,7 @@
 
           result.textContent = "Sending coordinates to the server...";
 
-          const response = await fetch("/api/location", {
+          const locationResponse = await fetch("/api/location", {
             method: "POST",
             headers: {
               "Content-Type": "application/json"
@@ -80,14 +80,28 @@
               longitude
             })
           });
-          console.log("Server response status:", response.status);
+          console.log("Server response status:", locationResponse.status);
 
-          const data = await response.json();
+          const locationData = await locationResponse.json();
+
+          const nearestResponse = await fetch("/api/campus/nearest", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              latitude,
+              longitude
+            })
+          });
+
+          const nearestData = await nearestResponse.json();
 
           result.textContent = JSON.stringify(
             {
               browser_coords: { latitude, longitude, accuracy },
-              backend_response: data
+              backend_response: locationData,
+              nearest_campus_location: nearestData
             },
             null,
             2
