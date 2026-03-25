@@ -6,6 +6,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from backend.app.services.google_maps import reverse_geocode
+
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -124,3 +126,8 @@ def receive_location(location: LocationCoordinates) -> dict[str, float | str]:
         "latitude": location.latitude,
         "longitude": location.longitude,
     }
+
+
+@app.post("/api/location/reverse-geocode")
+async def reverse_geocode_location(location: LocationCoordinates) -> dict:
+    return await reverse_geocode(location.latitude, location.longitude)
