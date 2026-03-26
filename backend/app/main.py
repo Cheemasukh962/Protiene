@@ -131,3 +131,9 @@ def receive_location(location: LocationCoordinates) -> dict[str, float | str]:
 @app.post("/api/location/reverse-geocode")
 async def reverse_geocode_location(location: LocationCoordinates) -> dict:
     return await reverse_geocode(location.latitude, location.longitude)
+
+
+@app.get("/api/test/silo-reverse-geocode")
+async def test_silo_reverse_geocode() -> dict:
+    silo = next(location for location in CAMPUS_LOCATIONS if location.name == "Silo")
+    return await reverse_geocode(silo.latitude, silo.longitude)
