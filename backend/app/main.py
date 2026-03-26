@@ -1,12 +1,16 @@
-from math import atan2, cos, radians, sin, sqrt
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi import HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from backend.app.services.google_maps import reverse_geocode, route_distance_to_destination
+from backend.app.services.google_maps import (
+    geocode_address,
+    reverse_geocode,
+    route_distance_to_destination,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -18,78 +22,18 @@ class LocationCoordinates(BaseModel):
     longitude: float
 
 
-class CampusLocation(BaseModel):
-    name: str
-    latitude: float
-    longitude: float
-    category: str
-
-
-class CampusLocationDistance(CampusLocation):
-    distance_miles: float
-
-
-CAMPUS_LOCATIONS = [
-    CampusLocation(
-        name="Silo",
-        latitude=38.53830,
-        longitude=-121.76168,
-        category="Food and Beverage",
-    ),
-    CampusLocation(
-        name="Segundo DC",
-        latitude=38.54161,
-        longitude=-121.75774,
-        category="Dining Hall",
-    ),
-    CampusLocation(
-        name="Memorial Union Market",
-        latitude=38.54266,
-        longitude=-121.74857,
-        category="Market",
-    ),
-]
+class UserTestingRequest(BaseModel):
+    origin_mode: str
+    food_query: str
+    origin_latitude: float | None = None
+    origin_longitude: float | None = None
+    origin_text: str | None = None
 
 app = FastAPI(title="Protein Finder")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 SILO_MARKET_LATITUDE = 38.53840121991231
 SILO_MARKET_LONGITUDE = -121.75272790479623
-
-
-def calculate_distance_miles(
-    lat1: float,
-    lon1: float,
-    lat2: float,
-    lon2: float,
-) -> float:
-    earth_radius_miles = 3958.8
-
-    lat1_rad = radians(lat1)
-    lon1_rad = radians(lon1)
-    lat2_rad = radians(lat2)
-    lon2_rad = radians(lon2)
-
-    dlat = lat2_rad - lat1_rad
-    dlon = lon2_rad - lon1_rad
-
-    a = sin(dlat / 2) ** 2 + cos(lat1_rad) * cos(lat2_rad) * sin(dlon / 2) ** 2
-    c = 2 * atan2(sqrt(a), sqrt(1 - a))
-
-    return earth_radius_miles * c
-
-
-def build_location_distance(
-    user_location: LocationCoordinates,
-    campus_location: CampusLocation,
-) -> CampusLocationDistance:
-    distance_miles = calculate_distance_miles(
-        user_location.latitude,
-        user_location.longitude,
-        campus_location.latitude,
-        campus_location.longitude,
-    )
-    return CampusLocationDistance(**campus_location.model_dump(), distance_miles=distance_miles)
 
 
 @app.get("/api/health")
@@ -100,22 +44,6 @@ def health_check() -> dict[str, str]:
 @app.get("/")
 def home() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
-
-
-@app.get("/api/campus_locations")
-def get_campus_locations() -> list[CampusLocation]:
-    return CAMPUS_LOCATIONS
-
-
-@app.post("/api/campus/nearest")
-def get_nearest_campus_location(
-    location: LocationCoordinates,
-) -> CampusLocationDistance:
-    locations_with_distance = [
-        build_location_distance(location, campus_location)
-        for campus_location in CAMPUS_LOCATIONS
-    ]
-    return min(locations_with_distance, key=lambda campus_location: campus_location.distance_miles)
 
 
 @app.post("/api/location")
@@ -138,8 +66,7 @@ async def reverse_geocode_location(location: LocationCoordinates) -> dict:
 
 @app.get("/api/test/silo-reverse-geocode")
 async def test_silo_reverse_geocode() -> dict:
-    silo = next(location for location in CAMPUS_LOCATIONS if location.name == "Silo")
-    result = await reverse_geocode(silo.latitude, silo.longitude)
+    result = await reverse_geocode(SILO_MARKET_LATITUDE, SILO_MARKET_LONGITUDE)
     print(result, flush=True)
     return result
 
@@ -166,3 +93,51 @@ async def route_to_silo_from_user(location: LocationCoordinates) -> dict:
         flush=True,
     )
     return result
+
+
+@app.post("/api/user-testing")
+async def user_testing_intake(request: UserTestingRequest) -> dict:
+    origin_latitude = request.origin_latitude
+    origin_longitude = request.origin_longitude
+    origin_label = "current location"
+
+    if request.origin_mode == "current":
+        if origin_latitude is None or origin_longitude is None:
+            raise HTTPException(
+                status_code=400,
+                detail="origin_latitude and origin_longitude are required for current mode",
+            )
+    elif request.origin_mode == "typed":
+        if not request.origin_text:
+            raise HTTPException(status_code=400, detail="origin_text is required for typed mode")
+        geocode_result = await geocode_address(request.origin_text)
+        if geocode_result.get("error"):
+            raise HTTPException(status_code=400, detail=geocode_result["error"])
+        origin_latitude = geocode_result.get("latitude")
+        origin_longitude = geocode_result.get("longitude")
+        origin_label = geocode_result.get("formatted_address") or request.origin_text
+    else:
+        raise HTTPException(status_code=400, detail="origin_mode must be 'current' or 'typed'")
+
+    if origin_latitude is None or origin_longitude is None:
+        raise HTTPException(status_code=400, detail="Could not determine origin coordinates")
+
+    route_preview = await route_distance_to_destination(
+        origin_latitude=origin_latitude,
+        origin_longitude=origin_longitude,
+        destination_latitude=SILO_MARKET_LATITUDE,
+        destination_longitude=SILO_MARKET_LONGITUDE,
+    )
+
+    output = {
+        "origin_mode": request.origin_mode,
+        "origin_label": origin_label,
+        "origin_latitude": origin_latitude,
+        "origin_longitude": origin_longitude,
+        "food_query": request.food_query,
+        "route_preview_to_silo_miles": route_preview.get("distance_miles"),
+        "route_preview_to_silo_duration": route_preview.get("duration"),
+        "route_error": route_preview.get("error"),
+    }
+    print(output, flush=True)
+    return output

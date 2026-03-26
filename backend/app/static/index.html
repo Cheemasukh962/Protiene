@@ -48,84 +48,103 @@
 <body>
   <main>
     <h1>Protein Finder</h1>
-    <p>This starter page is only here to test browser geolocation before we connect maps and search.</p>
-    <button id="locate-btn" type="button">Use my location</button>
-    <pre id="result">Waiting for location permission...</pre>
+    <p>First-step user testing: choose your start location and tell us what you want to eat.</p>
+    <div style="margin-bottom: 1rem;">
+      <label>
+        <input type="radio" id="mode-current" name="origin-mode" value="current" checked>
+        Use my current location
+      </label>
+      <br>
+      <label>
+        <input type="radio" id="mode-typed" name="origin-mode" value="typed">
+        Type my location
+      </label>
+    </div>
+    <div style="margin-bottom: 1rem;">
+      <label for="typed-origin">Typed location (only used in typed mode):</label>
+      <input id="typed-origin" type="text" placeholder="e.g. Shields Library, Davis CA" style="width:100%;padding:0.65rem;border:1px solid #d0c7b6;border-radius:10px;">
+    </div>
+    <div style="margin-bottom: 1rem;">
+      <label for="food-query">What do you want to eat?</label>
+      <input id="food-query" type="text" placeholder="e.g. chicken bowl, protein snack" style="width:100%;padding:0.65rem;border:1px solid #d0c7b6;border-radius:10px;">
+    </div>
+    <button id="submit-btn" type="button">Run user test</button>
+    <pre id="result">Waiting for user test input...</pre>
   </main>
   <script>
-    const button = document.getElementById("locate-btn");
+    const button = document.getElementById("submit-btn");
     const result = document.getElementById("result");
+    const modeCurrent = document.getElementById("mode-current");
+    const typedOriginInput = document.getElementById("typed-origin");
+    const foodQueryInput = document.getElementById("food-query");
 
-    button.addEventListener("click", () => {
-      if (!navigator.geolocation) {
-        result.textContent = "Geolocation is not supported in this browser.";
+    async function sendUserTestingRequest(payload) {
+      const response = await fetch("/api/user-testing", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "User test request failed");
+      }
+      return data;
+    }
+
+    button.addEventListener("click", async () => {
+      const foodQuery = foodQueryInput.value.trim();
+      if (!foodQuery) {
+        result.textContent = "Please type what you want to eat.";
         return;
       }
 
-      result.textContent = "Requesting your location...";
-
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const { latitude, longitude, accuracy } = position.coords;
-
-          result.textContent = "Sending coordinates to the server...";
-
-          const locationResponse = await fetch("/api/location", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              latitude,
-              longitude
-            })
+      if (modeCurrent.checked) {
+        if (!navigator.geolocation) {
+          result.textContent = "Geolocation is not supported in this browser.";
+          return;
+        }
+        result.textContent = "Requesting current location...";
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            try {
+              const { latitude, longitude } = position.coords;
+              const output = await sendUserTestingRequest({
+                origin_mode: "current",
+                origin_latitude: latitude,
+                origin_longitude: longitude,
+                food_query: foodQuery
+              });
+              result.textContent = JSON.stringify(output, null, 2);
+            } catch (error) {
+              result.textContent = `Error: ${error.message}`;
+            }
+          },
+          (error) => {
+            result.textContent = `Location error: ${error.message}`;
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+      } else {
+        const typedOrigin = typedOriginInput.value.trim();
+        if (!typedOrigin) {
+          result.textContent = "Please type your location or switch to current mode.";
+          return;
+        }
+        result.textContent = "Geocoding typed location and testing route...";
+        try {
+          const output = await sendUserTestingRequest({
+            origin_mode: "typed",
+            origin_text: typedOrigin,
+            food_query: foodQuery
           });
-          console.log("Server response status:", locationResponse.status);
-
-          const locationData = await locationResponse.json();
-
-          const nearestResponse = await fetch("/api/campus/nearest", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              latitude,
-              longitude
-            })
-          });
-
-          const nearestData = await nearestResponse.json();
-
-          const routeResponse = await fetch("/api/routes/to-silo", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              latitude,
-              longitude
-            })
-          });
-
-          const routeData = await routeResponse.json();
-
-          result.textContent = JSON.stringify(
-            {
-              browser_coords: { latitude, longitude, accuracy },
-              backend_response: locationData,
-              nearest_campus_location: nearestData,
-              route_to_silo_market: routeData
-            },
-            null,
-            2
-          );
-        },
-        (error) => {
-          result.textContent = `Location error: ${error.message}`;
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
+          result.textContent = JSON.stringify(output, null, 2);
+        } catch (error) {
+          result.textContent = `Error: ${error.message}`;
+        }
+      }
     });
 
     
