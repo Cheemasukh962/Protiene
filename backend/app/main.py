@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from backend.app.services.google_maps import reverse_geocode
+from backend.app.services.google_maps import reverse_geocode, route_distance_to_destination
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -52,6 +52,9 @@ CAMPUS_LOCATIONS = [
 
 app = FastAPI(title="Protein Finder")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+SILO_MARKET_LATITUDE = 38.53840121991231
+SILO_MARKET_LONGITUDE = -121.75272790479623
 
 
 def calculate_distance_miles(
@@ -136,4 +139,30 @@ async def reverse_geocode_location(location: LocationCoordinates) -> dict:
 @app.get("/api/test/silo-reverse-geocode")
 async def test_silo_reverse_geocode() -> dict:
     silo = next(location for location in CAMPUS_LOCATIONS if location.name == "Silo")
-    return await reverse_geocode(silo.latitude, silo.longitude)
+    result = await reverse_geocode(silo.latitude, silo.longitude)
+    print(result, flush=True)
+    return result
+
+
+@app.post("/api/routes/to-silo")
+async def route_to_silo_from_user(location: LocationCoordinates) -> dict:
+    result = await route_distance_to_destination(
+        origin_latitude=location.latitude,
+        origin_longitude=location.longitude,
+        destination_latitude=SILO_MARKET_LATITUDE,
+        destination_longitude=SILO_MARKET_LONGITUDE,
+    )
+    print(
+        {
+            "origin_latitude": location.latitude,
+            "origin_longitude": location.longitude,
+            "destination_name": "Silo Market",
+            "destination_latitude": SILO_MARKET_LATITUDE,
+            "destination_longitude": SILO_MARKET_LONGITUDE,
+            "distance_miles": result.get("distance_miles"),
+            "duration": result.get("duration"),
+            "error": result.get("error"),
+        },
+        flush=True,
+    )
+    return result

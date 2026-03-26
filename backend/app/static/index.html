@@ -97,11 +97,25 @@
 
           const nearestData = await nearestResponse.json();
 
+          const routeResponse = await fetch("/api/routes/to-silo", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              latitude,
+              longitude
+            })
+          });
+
+          const routeData = await routeResponse.json();
+
           result.textContent = JSON.stringify(
             {
               browser_coords: { latitude, longitude, accuracy },
               backend_response: locationData,
-              nearest_campus_location: nearestData
+              nearest_campus_location: nearestData,
+              route_to_silo_market: routeData
             },
             null,
             2
