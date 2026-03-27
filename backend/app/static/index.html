@@ -48,38 +48,42 @@
 <body>
   <main>
     <h1>Protein Finder</h1>
-    <p>First-step user testing: choose your start location and tell us what you want to eat.</p>
+    <p>Feature 1 test: choose your origin (current location or typed), type destination, and see miles.</p>
     <div style="margin-bottom: 1rem;">
-      <label>
-        <input type="radio" id="mode-current" name="origin-mode" value="current" checked>
-        Use my current location
-      </label>
-      <br>
-      <label>
-        <input type="radio" id="mode-typed" name="origin-mode" value="typed">
-        Type my location
-      </label>
+      <label><strong>Origin option 1:</strong> Use current location</label><br>
+      <button id="use-current-btn" type="button">Use current location</button>
+      <div id="current-status" style="margin-top:0.5rem;font-size:0.95rem;color:#4b4b4b;">Current location not set yet.</div>
     </div>
     <div style="margin-bottom: 1rem;">
-      <label for="typed-origin">Typed location (only used in typed mode):</label>
-      <input id="typed-origin" type="text" placeholder="e.g. Shields Library, Davis CA" style="width:100%;padding:0.65rem;border:1px solid #d0c7b6;border-radius:10px;">
+      <label for="origin-text"><strong>Origin option 2:</strong> Type your location manually</label>
+      <input id="origin-text" type="text" placeholder="e.g. Shields Library, Davis CA" style="width:100%;padding:0.65rem;border:1px solid #d0c7b6;border-radius:10px;">
     </div>
     <div style="margin-bottom: 1rem;">
-      <label for="food-query">What do you want to eat?</label>
-      <input id="food-query" type="text" placeholder="e.g. chicken bowl, protein snack" style="width:100%;padding:0.65rem;border:1px solid #d0c7b6;border-radius:10px;">
+      <label for="destination-text">Destination place (address or place name):</label>
+      <input id="destination-text" type="text" placeholder="e.g. Silo Market Davis CA" style="width:100%;padding:0.65rem;border:1px solid #d0c7b6;border-radius:10px;">
     </div>
-    <button id="submit-btn" type="button">Run user test</button>
-    <pre id="result">Waiting for user test input...</pre>
+    <div style="margin-bottom: 1rem;">
+      <label for="travel-mode">Travel mode:</label>
+      <select id="travel-mode" style="width:100%;padding:0.65rem;border:1px solid #d0c7b6;border-radius:10px;">
+        <option value="driving">Driving</option>
+        <option value="walking">Walking</option>
+      </select>
+    </div>
+    <button id="submit-btn" type="button">Calculate Distance In Miles</button>
+    <pre id="result">Ready for location-to-location distance test.</pre>
   </main>
   <script>
     const button = document.getElementById("submit-btn");
+    const useCurrentButton = document.getElementById("use-current-btn");
     const result = document.getElementById("result");
-    const modeCurrent = document.getElementById("mode-current");
-    const typedOriginInput = document.getElementById("typed-origin");
-    const foodQueryInput = document.getElementById("food-query");
+    const currentStatus = document.getElementById("current-status");
+    const originInput = document.getElementById("origin-text");
+    const destinationInput = document.getElementById("destination-text");
+    const travelModeInput = document.getElementById("travel-mode");
+    let currentOrigin = null;
 
-    async function sendUserTestingRequest(payload) {
-      const response = await fetch("/api/user-testing", {
+    async function requestDistance(payload) {
+      const response = await fetch("/api/distance", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -89,61 +93,78 @@
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.detail || "User test request failed");
+        throw new Error(data.detail || "Distance request failed");
       }
       return data;
     }
 
+    useCurrentButton.addEventListener("click", () => {
+      if (!navigator.geolocation) {
+        currentStatus.textContent = "Geolocation is not supported in this browser.";
+        return;
+      }
+      currentStatus.textContent = "Requesting your current location...";
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          currentOrigin = { latitude, longitude };
+          currentStatus.textContent = `Current location set: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+        },
+        (error) => {
+          currentStatus.textContent = `Location error: ${error.message}`;
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    });
+
     button.addEventListener("click", async () => {
-      const foodQuery = foodQueryInput.value.trim();
-      if (!foodQuery) {
-        result.textContent = "Please type what you want to eat.";
+      const destinationText = destinationInput.value.trim();
+      if (!destinationText) {
+        result.textContent = "Please type a destination place first.";
+        return;
+      }
+      const travelMode = travelModeInput.value;
+
+      let payload = null;
+      const typedOrigin = originInput.value.trim();
+      if (typedOrigin) {
+        payload = {
+          origin_mode: "typed",
+          origin_text: typedOrigin,
+          destination_text: destinationText,
+          travel_mode: travelMode
+        };
+      } else if (currentOrigin) {
+        payload = {
+          origin_mode: "current",
+          origin_latitude: currentOrigin.latitude,
+          origin_longitude: currentOrigin.longitude,
+          destination_text: destinationText,
+          travel_mode: travelMode
+        };
+      } else {
+        result.textContent = "Pick an origin first: click 'Use current location' OR type your origin location.";
         return;
       }
 
-      if (modeCurrent.checked) {
-        if (!navigator.geolocation) {
-          result.textContent = "Geolocation is not supported in this browser.";
-          return;
-        }
-        result.textContent = "Requesting current location...";
-        navigator.geolocation.getCurrentPosition(
-          async (position) => {
-            try {
-              const { latitude, longitude } = position.coords;
-              const output = await sendUserTestingRequest({
-                origin_mode: "current",
-                origin_latitude: latitude,
-                origin_longitude: longitude,
-                food_query: foodQuery
-              });
-              result.textContent = JSON.stringify(output, null, 2);
-            } catch (error) {
-              result.textContent = `Error: ${error.message}`;
-            }
-          },
-          (error) => {
-            result.textContent = `Location error: ${error.message}`;
-          },
-          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-        );
-      } else {
-        const typedOrigin = typedOriginInput.value.trim();
-        if (!typedOrigin) {
-          result.textContent = "Please type your location or switch to current mode.";
-          return;
-        }
-        result.textContent = "Geocoding typed location and testing route...";
-        try {
-          const output = await sendUserTestingRequest({
-            origin_mode: "typed",
-            origin_text: typedOrigin,
-            food_query: foodQuery
-          });
-          result.textContent = JSON.stringify(output, null, 2);
-        } catch (error) {
-          result.textContent = `Error: ${error.message}`;
-        }
+      result.textContent = "Calculating route miles with Google Maps...";
+      try {
+        const output = await requestDistance(payload);
+
+        result.textContent =
+          "Distance Test Output\n" +
+          "====================\n" +
+          `Origin Mode: ${output.origin_mode}\n` +
+          `Origin Resolved: ${output.origin_resolved}\n` +
+          `Travel Mode: ${output.travel_mode}\n` +
+          `Destination Entered: ${output.destination_text}\n` +
+          `Destination Resolved: ${output.destination_resolved}\n` +
+          `Distance (miles): ${output.distance_miles}\n` +
+          `Duration: ${output.duration}\n\n` +
+          "Raw Response:\n" +
+          JSON.stringify(output, null, 2);
+      } catch (error) {
+        result.textContent = `Error: ${error.message}`;
       }
     });
 

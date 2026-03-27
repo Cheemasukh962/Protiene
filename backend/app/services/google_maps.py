@@ -41,30 +41,40 @@ async def geocode_address(address: str) -> dict:
         return {"error": "Missing GOOGLE_MAPS_API_KEY"}
 
     url = "https://maps.googleapis.com/maps/api/geocode/json"
-    params = {
-        "address": address,
-        "key": GOOGLE_MAPS_API_KEY,
-    }
+    # Fallback candidates make short inputs like "Silo" resolve better near UC Davis.
+    candidate_queries = [
+        address.strip(),
+        f"{address.strip()}, Davis, CA",
+        f"{address.strip()}, UC Davis, CA",
+    ]
 
     async with httpx.AsyncClient() as client:
-        response = await client.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
+        for candidate in candidate_queries:
+            params = {
+                "address": candidate,
+                "key": GOOGLE_MAPS_API_KEY,
+                "region": "us",
+            }
+            response = await client.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
 
-    if not data.get("results"):
-        return {"error": "No matching address found", "status": data.get("status"), "raw": data}
-
-    first_result = data["results"][0]
-    geometry = first_result.get("geometry", {})
-    location = geometry.get("location", {})
+            if data.get("results"):
+                first_result = data["results"][0]
+                geometry = first_result.get("geometry", {})
+                location = geometry.get("location", {})
+                return {
+                    "formatted_address": first_result.get("formatted_address"),
+                    "latitude": location.get("lat"),
+                    "longitude": location.get("lng"),
+                    "place_id": first_result.get("place_id"),
+                    "status": data.get("status"),
+                    "query_used": candidate,
+                    "raw": data,
+                }
 
     return {
-        "formatted_address": first_result.get("formatted_address"),
-        "latitude": location.get("lat"),
-        "longitude": location.get("lng"),
-        "place_id": first_result.get("place_id"),
-        "status": data.get("status"),
-        "raw": data,
+        "error": "No matching address found. Try a more specific destination, like 'Silo Market Davis CA'.",
     }
 
 
@@ -73,9 +83,15 @@ async def route_distance_to_destination(
     origin_longitude: float,
     destination_latitude: float,
     destination_longitude: float,
+    travel_mode: str = "driving",
 ) -> dict:
     if not GOOGLE_MAPS_API_KEY:
         return {"error": "Missing GOOGLE_MAPS_API_KEY"}
+
+    normalized_mode = travel_mode.strip().lower()
+    google_travel_mode = "DRIVE"
+    if normalized_mode in {"walk", "walking"}:
+        google_travel_mode = "WALK"
 
     route_url = "https://routes.googleapis.com/directions/v2:computeRoutes"
     headers = {
@@ -100,9 +116,10 @@ async def route_distance_to_destination(
                 }
             }
         },
-        "travelMode": "DRIVE",
-        "routingPreference": "TRAFFIC_AWARE",
+        "travelMode": google_travel_mode,
     }
+    if google_travel_mode == "DRIVE":
+        route_request["routingPreference"] = "TRAFFIC_AWARE"
 
     async with httpx.AsyncClient() as client:
         response = await client.post(route_url, headers=headers, json=route_request)
@@ -119,6 +136,7 @@ async def route_distance_to_destination(
     distance_miles = round(distance_meters * 0.000621371, 2)
 
     return {
+        "travel_mode": google_travel_mode,
         "distance_meters": distance_meters,
         "distance_miles": distance_miles,
         "duration": duration,
