@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Protein Finder Route Map</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 2rem;
+      background: #f7f4ed;
+      color: #1f1f1f;
+    }
+
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+      background: #fffdf8;
+      border: 1px solid #d9d1bf;
+      border-radius: 16px;
+      padding: 1.5rem;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
+    }
+
+    h1 {
+      margin-top: 0;
+    }
+
+    button {
+      border: 0;
+      border-radius: 999px;
+      background: #205c3b;
+      color: white;
+      padding: 0.7rem 1.1rem;
+      cursor: pointer;
+      font-size: 0.95rem;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 0.65rem;
+      border: 1px solid #d0c7b6;
+      border-radius: 10px;
+      box-sizing: border-box;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    #map {
+      width: 100%;
+      height: 430px;
+      border-radius: 14px;
+      border: 1px solid #d9d1bf;
+      background: #eee7d8;
+    }
+
+    pre {
+      background: #f3eee2;
+      padding: 1rem;
+      border-radius: 12px;
+      overflow: auto;
+      min-height: 120px;
+    }
+
+    .muted {
+      font-size: 0.95rem;
+      color: #4b4b4b;
+    }
+
+    @media (max-width: 800px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Route Map</h1>
+    <p><a href="/">Back to Distance Tester</a></p>
+    <p>Choose origin (current or typed), choose destination, then draw the real route on the map.</p>
+
+    <div class="grid">
+      <section>
+        <div style="margin-bottom: 1rem;">
+          <label><strong>Origin option 1:</strong> Use current location</label><br>
+          <button id="use-current-btn" type="button">Use current location</button>
+          <div id="current-status" class="muted" style="margin-top: 0.5rem;">Current location not set yet.</div>
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+          <label for="origin-text"><strong>Origin option 2:</strong> Type origin manually</label>
+          <input id="origin-text" type="text" placeholder="e.g. Shields Library, Davis CA">
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+          <label for="destination-text"><strong>Destination:</strong> address or place</label>
+          <input id="destination-text" type="text" placeholder="e.g. Memorial Union, Davis CA">
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+          <label for="travel-mode"><strong>Travel mode:</strong></label>
+          <select id="travel-mode">
+            <option value="driving">Driving</option>
+            <option value="walking">Walking</option>
+          </select>
+        </div>
+
+        <button id="draw-route-btn" type="button">Draw Route</button>
+      </section>
+
+      <section>
+        <div id="map"></div>
+      </section>
+    </div>
+
+    <h3>Route Output</h3>
+    <pre id="result">Map not loaded yet.</pre>
+  </main>
+
+  <script>
+    const useCurrentButton = document.getElementById("use-current-btn");
+    const drawRouteButton = document.getElementById("draw-route-btn");
+    const currentStatus = document.getElementById("current-status");
+    const originInput = document.getElementById("origin-text");
+    const destinationInput = document.getElementById("destination-text");
+    const travelModeInput = document.getElementById("travel-mode");
+    const result = document.getElementById("result");
+
+    let currentOrigin = null;
+    let map = null;
+    let routePolyline = null;
+    let originMarker = null;
+    let destinationMarker = null;
+
+    async function fetchPublicMapConfig() {
+      const response = await fetch("/api/public-map-config");
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error("Failed to load public map config.");
+      }
+      if (!data.google_maps_js_api_key) {
+        throw new Error("Google Maps JS API key is missing.");
+      }
+      return data;
+    }
+
+    async function loadGoogleMapsSdk(apiKey) {
+      if (window.google && window.google.maps && window.google.maps.geometry) {
+        return;
+      }
+
+      await new Promise((resolve, reject) => {
+        const existing = document.getElementById("google-maps-sdk");
+        if (existing) {
+          existing.addEventListener("load", resolve);
+          existing.addEventListener("error", reject);
+          return;
+        }
+
+        const script = document.createElement("script");
+        script.id = "google-maps-sdk";
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=geometry`;
+        script.async = true;
+        script.defer = true;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error("Failed to load Google Maps JavaScript SDK."));
+        document.head.appendChild(script);
+      });
+    }
+
+    function initMap() {
+      map = new google.maps.Map(document.getElementById("map"), {
+        center: { lat: 38.540, lng: -121.750 },
+        zoom: 14,
+        mapTypeControl: false
+      });
+    }
+
+    async function requestRoute(payload) {
+      const response = await fetch("/api/route", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Route request failed.");
+      }
+      return data;
+    }
+
+    function clearMapRoute() {
+      if (routePolyline) {
+        routePolyline.setMap(null);
+        routePolyline = null;
+      }
+      if (originMarker) {
+        originMarker.setMap(null);
+        originMarker = null;
+      }
+      if (destinationMarker) {
+        destinationMarker.setMap(null);
+        destinationMarker = null;
+      }
+    }
+
+    function drawPolyline(encodedPolyline) {
+      const path = google.maps.geometry.encoding.decodePath(encodedPolyline);
+      if (!path || path.length === 0) {
+        throw new Error("Route polyline was empty.");
+      }
+
+      clearMapRoute();
+
+      routePolyline = new google.maps.Polyline({
+        path: path,
+        geodesic: true,
+        strokeColor: "#1a73e8",
+        strokeOpacity: 0.95,
+        strokeWeight: 5,
+        map: map
+      });
+
+      originMarker = new google.maps.Marker({
+        map: map,
+        position: path[0],
+        title: "Origin"
+      });
+
+      destinationMarker = new google.maps.Marker({
+        map: map,
+        position: path[path.length - 1],
+        title: "Destination"
+      });
+
+      const bounds = new google.maps.LatLngBounds();
+      path.forEach((point) => bounds.extend(point));
+      map.fitBounds(bounds);
+    }
+
+    useCurrentButton.addEventListener("click", () => {
+      if (!navigator.geolocation) {
+        currentStatus.textContent = "Geolocation is not supported in this browser.";
+        return;
+      }
+
+      currentStatus.textContent = "Requesting your current location...";
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          currentOrigin = { latitude, longitude };
+          currentStatus.textContent = `Current location set: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+        },
+        (error) => {
+          currentStatus.textContent = `Location error: ${error.message}`;
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    });
+
+    drawRouteButton.addEventListener("click", async () => {
+      const destinationText = destinationInput.value.trim();
+      if (!destinationText) {
+        result.textContent = "Please type a destination first.";
+        return;
+      }
+
+      const typedOrigin = originInput.value.trim();
+      const travelMode = travelModeInput.value;
+
+      let payload = null;
+      if (typedOrigin) {
+        payload = {
+          origin_mode: "typed",
+          origin_text: typedOrigin,
+          destination_text: destinationText,
+          travel_mode: travelMode
+        };
+      } else if (currentOrigin) {
+        payload = {
+          origin_mode: "current",
+          origin_latitude: currentOrigin.latitude,
+          origin_longitude: currentOrigin.longitude,
+          destination_text: destinationText,
+          travel_mode: travelMode
+        };
+      } else {
+        result.textContent = "Set origin first: click 'Use current location' OR type origin.";
+        return;
+      }
+
+      result.textContent = "Calculating route...";
+      try {
+        const routeData = await requestRoute(payload);
+        if (routeData.encoded_polyline) {
+          drawPolyline(routeData.encoded_polyline);
+        }
+
+        result.textContent =
+          "Route Output\n" +
+          "============\n" +
+          `Origin: ${routeData.origin_resolved}\n` +
+          `Destination: ${routeData.destination_resolved}\n` +
+          `Travel Mode: ${routeData.travel_mode}\n` +
+          `Distance (miles): ${routeData.distance_miles}\n` +
+          `Duration: ${routeData.duration}\n` +
+          `Route Error: ${routeData.route_error ?? "None"}\n`;
+      } catch (error) {
+        result.textContent = `Error: ${error.message}`;
+      }
+    });
+
+    (async function startup() {
+      try {
+        const config = await fetchPublicMapConfig();
+        await loadGoogleMapsSdk(config.google_maps_js_api_key);
+        initMap();
+        result.textContent = "Map ready. Set origin and destination, then draw route.";
+      } catch (error) {
+        result.textContent = `Map initialization error: ${error.message}`;
+      }
+    })();
+  </script>
+</body>
+</html>

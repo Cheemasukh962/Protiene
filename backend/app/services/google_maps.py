@@ -97,7 +97,7 @@ async def route_distance_to_destination(
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
-        "X-Goog-FieldMask": "routes.distanceMeters,routes.duration",
+        "X-Goog-FieldMask": "routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline",
     }
     route_request = {
         "origin": {
@@ -134,11 +134,13 @@ async def route_distance_to_destination(
     distance_meters = first_route.get("distanceMeters", 0)
     duration = first_route.get("duration")
     distance_miles = round(distance_meters * 0.000621371, 2)
+    encoded_polyline = first_route.get("polyline", {}).get("encodedPolyline")
 
     return {
         "travel_mode": google_travel_mode,
         "distance_meters": distance_meters,
         "distance_miles": distance_miles,
         "duration": duration,
+        "encoded_polyline": encoded_polyline,
         "raw": data,
     }
