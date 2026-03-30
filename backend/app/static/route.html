@@ -121,6 +121,8 @@
 
     <h3>Route Output</h3>
     <pre id="result">Map not loaded yet.</pre>
+    <h3>Directions</h3>
+    <ol id="directions-list"></ol>
   </main>
 
   <script>
@@ -131,6 +133,7 @@
     const destinationInput = document.getElementById("destination-text");
     const travelModeInput = document.getElementById("travel-mode");
     const result = document.getElementById("result");
+    const directionsList = document.getElementById("directions-list");
 
     let currentOrigin = null;
     let map = null;
@@ -244,6 +247,24 @@
       map.fitBounds(bounds);
     }
 
+    function renderDirections(steps) {
+      directionsList.innerHTML = "";
+
+      if (!steps || steps.length === 0) {
+        const listItem = document.createElement("li");
+        listItem.textContent = "No step directions available for this route.";
+        directionsList.appendChild(listItem);
+        return;
+      }
+
+      steps.forEach((step) => {
+        const listItem = document.createElement("li");
+        const durationSuffix = step.duration_seconds ? ` | ${step.duration_seconds}s` : "";
+        listItem.textContent = `${step.instruction_text} (${step.distance_miles} mi${durationSuffix})`;
+        directionsList.appendChild(listItem);
+      });
+    }
+
     useCurrentButton.addEventListener("click", () => {
       if (!navigator.geolocation) {
         currentStatus.textContent = "Geolocation is not supported in this browser.";
@@ -301,6 +322,7 @@
         if (routeData.encoded_polyline) {
           drawPolyline(routeData.encoded_polyline);
         }
+        renderDirections(routeData.steps);
 
         result.textContent =
           "Route Output\n" +

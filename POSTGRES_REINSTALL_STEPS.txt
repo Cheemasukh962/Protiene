@@ -1,0 +1,73 @@
+POSTGRES + PROJECT TRANSFER STEPS (WINDOWS)
+Last updated: 2026-03-30
+
+1) CLONE / OPEN PROJECT
+- Open terminal in your project folder (example: C:\Users\cheem\Protiene)
+
+2) SET UP PYTHON ENVIRONMENT
+- python -m venv .venv
+- .\.venv\Scripts\Activate.ps1
+- pip install -r requirements.txt
+
+3) INSTALL POSTGRESQL SERVER
+- Install PostgreSQL from official installer.
+- During installer, include:
+  - PostgreSQL Server
+  - Command Line Tools (psql)
+  - pgAdmin 4
+- You do NOT need every optional driver for this project right now.
+
+4) CREATE DATABASE
+Option A (pgAdmin):
+- Open pgAdmin 4
+- Servers -> Databases -> right click -> Create -> Database
+- Name: dprotein
+- Save
+
+Option B (psql):
+- psql -h localhost -p 5432 -U postgres -d postgres
+- CREATE DATABASE dprotein;
+
+5) CONFIGURE ENV FILE
+- Create/edit .env in repo root:
+  GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_KEY
+  POSTGRES_DSN=postgresql://postgres:YOUR_PASSWORD@localhost:5432/dprotein
+
+6) VERIFY DATABASE CONNECTION
+In pgAdmin Query Tool (connected to dprotein), run:
+- SELECT current_database();
+- \dt  (psql only)
+
+7) START APP
+- uvicorn backend.app.main:app --reload
+- Open http://127.0.0.1:8000/
+
+8) VERIFY EVERYTHING WORKS
+- Run tests:
+  - .\.venv\Scripts\python.exe -m pytest -q
+- Expected right now: all tests pass.
+
+9) HOW RECOMMENDATION TABLES GET CREATED
+- Current code creates/seeds recommendation tables automatically on first recommendation request.
+- First time you call /api/recommendations, it will initialize:
+  - venues
+  - menu_items
+
+10) TROUBLESHOOTING
+- If key not found:
+  - make sure file name is .env (not .env.example)
+  - restart uvicorn after editing .env
+- If psql not recognized:
+  - use full path once, example:
+    & "C:\Program Files\PostgreSQL\17\bin\psql.exe" -h localhost -p 5432 -U postgres -d postgres
+- If login fails:
+  - confirm postgres username/password from installer
+  - reset password in pgAdmin: Login/Group Roles -> postgres -> Properties -> Definition
+
+11) DOCKER LATER (DIFFICULTY)
+- Adding Docker for this app is moderate difficulty.
+- Typical setup:
+  - app service (FastAPI)
+  - db service (Postgres)
+  - docker-compose.yml for local one-command startup
+- Estimated effort for clean first version: ~2-4 hours.

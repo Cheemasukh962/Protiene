@@ -134,6 +134,15 @@ def test_route_endpoint_returns_miles_and_polyline(monkeypatch: pytest.MonkeyPat
             "distance_miles": 0.62,
             "duration": "780s",
             "encoded_polyline": "abc123",
+            "steps": [
+                {
+                    "step_number": 1,
+                    "instruction_text": "Head north on A St",
+                    "distance_miles": 0.2,
+                    "duration_seconds": 120,
+                    "duration_text": "120s",
+                }
+            ],
         }
 
     monkeypatch.setattr(main_module, "geocode_address", fake_geocode_address)
@@ -156,6 +165,9 @@ def test_route_endpoint_returns_miles_and_polyline(monkeypatch: pytest.MonkeyPat
     assert data["distance_miles"] == pytest.approx(0.62, abs=1e-9)
     assert isinstance(data["encoded_polyline"], str)
     assert len(data["encoded_polyline"]) > 0
+    assert isinstance(data["steps"], list)
+    assert len(data["steps"]) > 0
+    assert data["steps"][0]["instruction_text"] == "Head north on A St"
 
 
 def test_route_endpoint_typed_origin_geocodes_both_locations(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -187,6 +199,15 @@ def test_route_endpoint_typed_origin_geocodes_both_locations(monkeypatch: pytest
             "distance_miles": 1.0,
             "duration": "320s",
             "encoded_polyline": "xyz987",
+            "steps": [
+                {
+                    "step_number": 1,
+                    "instruction_text": "Turn right onto Hutchison Dr",
+                    "distance_miles": 0.5,
+                    "duration_seconds": 160,
+                    "duration_text": "160s",
+                }
+            ],
         }
 
     monkeypatch.setattr(main_module, "geocode_address", fake_geocode_address)
@@ -250,6 +271,15 @@ def test_route_endpoint_passes_travel_mode(monkeypatch: pytest.MonkeyPatch) -> N
             "distance_miles": 0.8,
             "duration": "900s",
             "encoded_polyline": "poly123",
+            "steps": [
+                {
+                    "step_number": 1,
+                    "instruction_text": "Walk east",
+                    "distance_miles": 0.4,
+                    "duration_seconds": 300,
+                    "duration_text": "300s",
+                }
+            ],
         }
 
     monkeypatch.setattr(main_module, "geocode_address", fake_geocode_address)

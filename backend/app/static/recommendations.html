@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DProtein Recommendations</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 2rem;
+      background: #f7f4ed;
+      color: #1f1f1f;
+    }
+
+    main {
+      max-width: 920px;
+      margin: 0 auto;
+      background: #fffdf8;
+      border: 1px solid #d9d1bf;
+      border-radius: 16px;
+      padding: 1.5rem;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
+    }
+
+    input, select {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #d0c7b6;
+      border-radius: 10px;
+      padding: 0.65rem;
+    }
+
+    button {
+      border: 0;
+      border-radius: 999px;
+      background: #205c3b;
+      color: white;
+      padding: 0.8rem 1.2rem;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+
+    .row {
+      margin-bottom: 1rem;
+    }
+
+    .status {
+      color: #4b4b4b;
+      font-size: 0.95rem;
+      margin-top: 0.4rem;
+    }
+
+    .card {
+      border: 1px solid #d8cfbd;
+      border-radius: 12px;
+      padding: 0.9rem;
+      margin-bottom: 0.75rem;
+      background: #f9f5ec;
+    }
+
+    .top {
+      border-color: #2a7a4f;
+      background: #edf7ef;
+    }
+
+    pre {
+      background: #f3eee2;
+      padding: 1rem;
+      border-radius: 12px;
+      overflow: auto;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>DProtein Recommendations</h1>
+    <p><a href="/">Back to Distance Tester</a></p>
+    <p>Find the closest protein options for a keyword like <code>smoothie</code> or <code>chicken</code>.</p>
+
+    <div class="row">
+      <label><strong>Origin option 1:</strong> Use current location</label><br>
+      <button id="use-current-btn" type="button">Use current location</button>
+      <div id="current-status" class="status">Current location not set yet.</div>
+    </div>
+
+    <div class="row">
+      <label for="origin-text"><strong>Origin option 2:</strong> Type origin manually</label>
+      <input id="origin-text" type="text" placeholder="e.g. Shields Library, Davis CA">
+    </div>
+
+    <div class="row">
+      <label for="keyword-input"><strong>Food keyword</strong></label>
+      <input id="keyword-input" type="text" placeholder="e.g. smoothie">
+    </div>
+
+    <div class="row">
+      <label for="travel-mode"><strong>Travel mode</strong></label>
+      <select id="travel-mode">
+        <option value="walking">Walking</option>
+        <option value="driving">Driving</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label for="max-results"><strong>Max results</strong></label>
+      <input id="max-results" type="number" min="1" max="10" value="5">
+    </div>
+
+    <button id="find-btn" type="button">Find Protein Options</button>
+
+    <h3>Results</h3>
+    <div id="cards"></div>
+    <pre id="raw-output">Ready.</pre>
+  </main>
+
+  <script>
+    const useCurrentButton = document.getElementById("use-current-btn");
+    const currentStatus = document.getElementById("current-status");
+    const originTextInput = document.getElementById("origin-text");
+    const keywordInput = document.getElementById("keyword-input");
+    const travelModeInput = document.getElementById("travel-mode");
+    const maxResultsInput = document.getElementById("max-results");
+    const findButton = document.getElementById("find-btn");
+    const cardsContainer = document.getElementById("cards");
+    const rawOutput = document.getElementById("raw-output");
+
+    let currentOrigin = null;
+
+    async function requestRecommendations(recommendationRequestBody) {
+      const response = await fetch("/api/recommendations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(recommendationRequestBody)
+      });
+
+      const responseJson = await response.json();
+      if (!response.ok) {
+        throw new Error(responseJson.detail || "Recommendation request failed.");
+      }
+      return responseJson;
+    }
+
+    function renderRecommendationCards(responseJson) {
+      cardsContainer.innerHTML = "";
+      const recommendations = responseJson.recommendations || [];
+
+      if (recommendations.length === 0) {
+        const message = responseJson.message || "No matching protein options found.";
+        cardsContainer.innerHTML = `<div class="card">${message}</div>`;
+        return;
+      }
+
+      recommendations.forEach((recommendation, index) => {
+        const card = document.createElement("div");
+        card.className = `card ${index === 0 ? "top" : ""}`;
+        card.innerHTML =
+          `<strong>${index + 1}. ${recommendation.venue_name}</strong> (${recommendation.venue_category})<br>` +
+          `Best Match: ${recommendation.item_name}<br>` +
+          `Protein: ${recommendation.protein_grams}g<br>` +
+          `Distance: ${recommendation.distance_miles ?? "N/A"} miles<br>` +
+          `Duration: ${recommendation.duration ?? "N/A"}<br>` +
+          `Tags: ${(recommendation.tags || []).join(", ")}<br>` +
+          `<em>${recommendation.why_selected}</em>`;
+        cardsContainer.appendChild(card);
+      });
+    }
+
+    useCurrentButton.addEventListener("click", () => {
+      if (!navigator.geolocation) {
+        currentStatus.textContent = "Geolocation is not supported in this browser.";
+        return;
+      }
+
+      currentStatus.textContent = "Requesting your current location...";
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          currentOrigin = { latitude, longitude };
+          currentStatus.textContent = `Current location set: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+        },
+        (error) => {
+          currentStatus.textContent = `Location error: ${error.message}`;
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    });
+
+    findButton.addEventListener("click", async () => {
+      const keyword = keywordInput.value.trim();
+      if (!keyword) {
+        rawOutput.textContent = "Please enter a keyword first.";
+        return;
+      }
+
+      const typedOrigin = originTextInput.value.trim();
+      const travelMode = travelModeInput.value;
+      const maxResults = Number(maxResultsInput.value || "5");
+
+      let recommendationRequestBody = null;
+      if (typedOrigin) {
+        recommendationRequestBody = {
+          origin_mode: "typed",
+          origin_text: typedOrigin,
+          keyword: keyword,
+          travel_mode: travelMode,
+          max_results: maxResults,
+        };
+      } else if (currentOrigin) {
+        recommendationRequestBody = {
+          origin_mode: "current",
+          origin_latitude: currentOrigin.latitude,
+          origin_longitude: currentOrigin.longitude,
+          keyword: keyword,
+          travel_mode: travelMode,
+          max_results: maxResults,
+        };
+      } else {
+        rawOutput.textContent = "Set origin first: click current location OR type origin manually.";
+        return;
+      }
+
+      rawOutput.textContent = "Finding protein options...";
+      cardsContainer.innerHTML = "";
+
+      try {
+        const responseJson = await requestRecommendations(recommendationRequestBody);
+        renderRecommendationCards(responseJson);
+        rawOutput.textContent = JSON.stringify(responseJson, null, 2);
+      } catch (error) {
+        rawOutput.textContent = `Error: ${error.message}`;
+      }
+    });
+  </script>
+</body>
+</html>

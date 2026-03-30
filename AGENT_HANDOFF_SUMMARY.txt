@@ -1,0 +1,156 @@
+AGENT HANDOFF SUMMARY (Protein Finder / DProtein)
+Date: 2026-03-30
+Branch: V1
+
+PROJECT GOAL
+- Build a backend-first campus app where students can:
+  - provide origin (current location or typed location)
+  - provide destination/keyword
+  - get route distance/duration/directions
+  - get protein-aware nearby recommendations
+
+USER PREFERENCES (IMPORTANT)
+- Keep most logic in Python backend.
+- Frontend should stay thin.
+- User wants to review code snippets before large new implementation changes.
+- User is learning and wants explanations of why code works.
+
+CURRENT IMPLEMENTED FEATURES
+- FastAPI endpoints:
+  - GET /api/health
+  - GET /
+  - GET /api/public-map-config
+  - POST /api/location
+  - POST /api/location/reverse-geocode
+  - POST /api/distance
+  - POST /api/route
+  - POST /api/recommendations
+- Google integration:
+  - geocoding (typed text -> coordinates)
+  - reverse geocoding
+  - route distance + duration
+  - travel mode (walking/driving)
+  - encoded polyline
+  - turn-by-turn steps (static list)
+- Frontend pages:
+  - / (index.html distance tester)
+  - /static/route.html (route map + directions)
+  - /static/recommendations.html (keyword recommendation list)
+- Recommendation MVP:
+  - keyword match by venue/item/tags
+  - ranks by distance first, then protein grams
+  - uses real route distance from Google Routes API
+
+POSTGRES STATUS
+- Added async Postgres service: backend/app/services/postgres_db.py
+- Runtime init currently creates:
+  - venues
+  - menu_items
+- Seed dataset includes Davis venues and sample protein items.
+- Current behavior:
+  - Reads recommendation data from Postgres
+  - Does NOT yet persist user search history or click history
+
+TEST STATUS
+- Test files:
+  - tests/test_distance.py
+  - tests/test_recommendations.py
+- Latest run result:
+  - 11 passed
+
+DEPENDENCIES (requirements.txt)
+- fastapi==0.116.1
+- uvicorn[standard]==0.35.0
+- python-dotenv==1.1.1
+- httpx==0.28.1
+- pytest==8.3.5
+- asyncpg==0.30.0
+
+UNPUSHED LOCAL CHANGES (DIRTY WORKTREE)
+- Modified:
+  - README.md
+  - backend/app/config.py
+  - backend/app/main.py
+  - backend/app/services/google_maps.py
+  - backend/app/static/index.html
+  - backend/app/static/route.html
+  - requirements.txt
+  - tests/test_distance.py
+- Untracked:
+  - MORE INFO.txt
+  - POSTGRES_REINSTALL_STEPS.txt
+  - backend/app/services/postgres_db.py
+  - backend/app/static/recommendations.html
+  - tests/test_recommendations.py
+- Intended status:
+  - These local changes are expected work-in-progress for the new recommendation system.
+  - Keep them for continuation unless user explicitly asks to discard/revert.
+
+RECENT PUSHED COMMITS ON V1
+- 5e08698 maps added
+- 2a0b076 Routing system started got rid of fluff
+- b6206c0 moved onto to where we are trying to manual enter routes and places and get the miles like a prompt system
+- 2511da8 Add Google Routes distance-to-Silo endpoint and UI output
+- 123c533 Add Silo reverse geocode test route
+
+CONFIG / ENV NOTES
+- .env should include:
+  - GOOGLE_MAPS_API_KEY=...
+  - POSTGRES_DSN=postgresql://postgres:<PASSWORD>@localhost:5432/dprotein
+- User recently set up pgAdmin/Postgres and is moving desktops.
+- Transfer setup doc exists: POSTGRES_REINSTALL_STEPS.txt
+
+HIGH-PRIORITY NEXT STEPS
+1) Persist user behavior:
+   - add search_events table
+   - add recommendation_events table
+2) Data ingestion pipeline:
+   - define trusted dining hall sources
+   - start manual import first; scraping later
+3) Recommendation quality:
+   - add open-hours checks
+   - handle stale data
+4) Deployment:
+   - containerization (Docker compose app + db)
+   - key security/restrictions
+   - basic monitoring
+
+PROPOSED EVENT TABLE MVP (to unblock next agent)
+- search_events:
+  - id, created_at, origin_mode, origin_lat, origin_lng, origin_text, keyword, travel_mode
+- recommendation_events:
+  - id, search_event_id, rank_position, venue_id, item_id, distance_miles, protein_grams
+
+FRESH MACHINE BOOT CHECKLIST (PRACTICAL)
+1) Install Python + Postgres + pgAdmin.
+2) Create db `dprotein`.
+3) Create `.env` with:
+   - GOOGLE_MAPS_API_KEY=...
+   - POSTGRES_DSN=postgresql://postgres:<PASSWORD>@localhost:5432/dprotein
+4) `python -m venv .venv`
+5) `.\.venv\Scripts\Activate.ps1`
+6) `pip install -r requirements.txt`
+7) `.\.venv\Scripts\python.exe -m pytest -q` (expect tests passing)
+8) `uvicorn backend.app.main:app --reload`
+
+KNOWN RISK / CLEANUP ITEM
+- API key appears in .env.example currently; rotate/restrict key and remove real key material from tracked example files.
+
+DEFAULTS TO USE IF USER IS OFFLINE (DECISION GUARDRAILS)
+- Dining data source phase:
+  - Phase 1: manual curated CSV/JSON import managed in repo.
+  - Phase 2: add scraping jobs for dining hall pages after schema is stable.
+- Open-hours filtering:
+  - If hours data missing, do not hide venue; mark `hours_status: unknown`.
+  - If closed status is known, demote in ranking but keep optional visibility.
+- Stale-data policy:
+  - Attach `last_verified_at` to imported menu records.
+  - Flag stale if older than 7 days.
+- Deployment default:
+  - Local: Docker Compose with `app` + `db`.
+  - First hosted target: Render (or Railway) with managed Postgres.
+- API key cleanup path:
+  1) Rotate Google key in cloud console.
+  2) Restrict key by API + referrer/IP as appropriate.
+  3) Replace .env.example with placeholder only.
+  4) Do not commit real keys again.

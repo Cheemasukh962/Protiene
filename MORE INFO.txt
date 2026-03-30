@@ -1,0 +1,43 @@
+DPROTEIN PROJECT TRACKER
+Last updated: 2026-03-30
+
+WHAT HAS BEEN ADDED
+- FastAPI backend with backend-first architecture
+- Google Geocoding + Routes integration
+- Distance endpoint and route endpoint
+- Driving/walking travel modes
+- Turn-by-turn steps in route response
+- Route map page and recommendations page
+- Postgres integration via asyncpg
+- Seeded Davis venue + menu item dataset
+- Recommendation endpoint ranked by:
+  1) closest distance
+  2) highest protein grams
+- Tests for route and recommendation behavior
+
+WHAT IS STILL NEEDED / IN PROGRESS
+- SQL integration hardening:
+  - confirm local Postgres user/password/DSN across machines
+  - add migrations instead of only runtime table creation
+  - add persistent user event tables (search history, selected recommendation)
+- Data collection:
+  - define official UC Davis dining data sources
+  - decide scrape vs manual import vs API feed
+  - build scraper/import jobs for dining halls, MU, Silo, food trucks
+  - normalize names/tags/protein units
+  - add update cadence and stale-data checks
+- Recommendation quality:
+  - add open-now and hours filtering
+  - add confidence and fallback messages
+  - better tie-break logic for near-equal distances
+- Product and deployment:
+  - secure and restrict Google keys
+  - deploy API and static pages
+  - monitoring/logging/error alerts
+  - admin panel for venue/menu edits
+
+NEXT PRACTICAL STEP
+- Create two new tables:
+  - search_events
+  - recommendation_events
+- Save every keyword search and ranked result list so we can evaluate recommendation quality with real usage data.

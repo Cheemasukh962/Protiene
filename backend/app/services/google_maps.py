@@ -3,6 +3,18 @@ import httpx
 from backend.app.config import GOOGLE_MAPS_API_KEY
 
 
+def _duration_text_to_seconds(duration_text: str | None) -> int | None:
+    if not duration_text:
+        return None
+
+    # Routes API durations are typically formatted like "123s".
+    raw_value = duration_text[:-1] if duration_text.endswith("s") else duration_text
+    try:
+        return int(raw_value)
+    except ValueError:
+        return None
+
+
 async def reverse_geocode(latitude: float, longitude: float) -> dict:
     if not GOOGLE_MAPS_API_KEY:
         return {"error": "Missing GOOGLE_MAPS_API_KEY"}
@@ -97,7 +109,14 @@ async def route_distance_to_destination(
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
-        "X-Goog-FieldMask": "routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline",
+        "X-Goog-FieldMask": (
+            "routes.distanceMeters,"
+            "routes.duration,"
+            "routes.polyline.encodedPolyline,"
+            "routes.legs.steps.distanceMeters,"
+            "routes.legs.steps.staticDuration,"
+            "routes.legs.steps.navigationInstruction.instructions"
+        ),
     }
     route_request = {
         "origin": {
@@ -135,6 +154,28 @@ async def route_distance_to_destination(
     duration = first_route.get("duration")
     distance_miles = round(distance_meters * 0.000621371, 2)
     encoded_polyline = first_route.get("polyline", {}).get("encodedPolyline")
+    first_leg = (first_route.get("legs") or [{}])[0]
+    raw_steps = first_leg.get("steps", [])
+    steps = []
+    for index, step in enumerate(raw_steps, start=1):
+        instruction = (
+            step.get("navigationInstruction", {}).get("instructions")
+            or "Continue"
+        )
+        step_distance_meters = step.get("distanceMeters", 0)
+        step_distance_miles = round(step_distance_meters * 0.000621371, 2)
+        step_duration_text = step.get("staticDuration")
+        step_duration_seconds = _duration_text_to_seconds(step_duration_text)
+
+        steps.append(
+            {
+                "step_number": index,
+                "instruction_text": instruction,
+                "distance_miles": step_distance_miles,
+                "duration_seconds": step_duration_seconds,
+                "duration_text": step_duration_text,
+            }
+        )
 
     return {
         "travel_mode": google_travel_mode,
@@ -142,5 +183,6 @@ async def route_distance_to_destination(
         "distance_miles": distance_miles,
         "duration": duration,
         "encoded_polyline": encoded_polyline,
+        "steps": steps,
         "raw": data,
     }
