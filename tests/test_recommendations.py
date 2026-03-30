@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-import backend.app.main as main_module
+import backend.app.services.recommendations as recommendations_module
 from backend.app.main import app
 
 
@@ -45,11 +45,15 @@ def test_recommendations_distance_first_then_protein(monkeypatch: pytest.MonkeyP
         return {"distance_miles": 1.2, "duration": "920s"}
 
     monkeypatch.setattr(
-        main_module,
+        recommendations_module,
         "search_keyword_top_item_per_venue",
         fake_search_keyword_top_item_per_venue,
     )
-    monkeypatch.setattr(main_module, "route_distance_to_destination", fake_route_distance_to_destination)
+    monkeypatch.setattr(
+        recommendations_module,
+        "route_distance_to_destination",
+        fake_route_distance_to_destination,
+    )
 
     response = client.post(
         "/api/recommendations",
@@ -101,13 +105,17 @@ def test_recommendations_typed_origin_success(monkeypatch: pytest.MonkeyPatch) -
     ) -> dict:
         return {"distance_miles": 0.8, "duration": "600s"}
 
-    monkeypatch.setattr(main_module, "geocode_address", fake_geocode_address)
+    monkeypatch.setattr(recommendations_module, "geocode_address", fake_geocode_address)
     monkeypatch.setattr(
-        main_module,
+        recommendations_module,
         "search_keyword_top_item_per_venue",
         fake_search_keyword_top_item_per_venue,
     )
-    monkeypatch.setattr(main_module, "route_distance_to_destination", fake_route_distance_to_destination)
+    monkeypatch.setattr(
+        recommendations_module,
+        "route_distance_to_destination",
+        fake_route_distance_to_destination,
+    )
 
     response = client.post(
         "/api/recommendations",
@@ -131,7 +139,7 @@ def test_recommendations_no_matches_returns_empty(monkeypatch: pytest.MonkeyPatc
         return []
 
     monkeypatch.setattr(
-        main_module,
+        recommendations_module,
         "search_keyword_top_item_per_venue",
         fake_search_keyword_top_item_per_venue,
     )

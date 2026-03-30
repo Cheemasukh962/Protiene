@@ -19,6 +19,7 @@ Protein Finder is a Python-first FastAPI app focused on backend logic for route 
   - keyword input (example: `smoothie`)
   - Postgres-backed venue/menu lookup
   - ranking rule: closest distance first, then higher protein
+  - backend service layer in `backend/app/services/recommendations.py`
 - Frontend pages:
   - `/` distance tester
   - `/static/route.html` route map + directions
@@ -52,6 +53,23 @@ Protein Finder is a Python-first FastAPI app focused on backend logic for route 
 - `POST /api/route`
 - `POST /api/recommendations`
 - `GET /api/public-map-config`
+
+## Backend Logic Ownership
+
+- Frontend (`recommendations.html`) only:
+  - collects user input
+  - calls `/api/recommendations`
+  - renders returned cards/results
+- Backend owns recommendation logic:
+  - input validation
+  - origin resolution (current vs typed)
+  - keyword filtering from Postgres
+  - route distance calls to Google Routes
+  - ranking (distance first, protein second)
+
+The `/api/recommendations` endpoint now delegates to:
+
+- `backend/app/services/recommendations.py`
 
 ## Environment Variables
 
