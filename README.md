@@ -3,6 +3,9 @@
 # VIDEO DEMO : https://youtu.be/wsZswz_mpjo
 
 
+# FYI: You need your cookies enabled if you are in a private browser blokcing them it wont work
+
+
 # Current Problem: IT TAKES A SECOND FOR A USER LOG IN TO REGISTER 
 Works locally in terms of storing users sometimes has problems in vercel 
 
