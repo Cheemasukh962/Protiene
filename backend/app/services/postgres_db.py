@@ -1,4 +1,3 @@
-import asyncio
 from typing import Any
 
 from backend.app.config import POSTGRES_DSN
@@ -10,53 +9,33 @@ except ImportError:  # pragma: no cover - handled at runtime in environments wit
 
 
 _pool: Any = None
-_initialized = False
-_init_lock = asyncio.Lock()
 
-
-SEED_VENUES = [
-    ("Segundo Dining Commons", "Dining Hall", 38.54161, -121.75774),
-    ("Tercero Dining Commons", "Dining Hall", 38.54453, -121.74989),
-    ("Cuarto Dining Commons", "Dining Hall", 38.53595, -121.76145),
-    ("Silo Market", "Market", 38.53840, -121.75273),
-    ("Silo Food Trucks", "Food Trucks", 38.53855, -121.75290),
-    ("Memorial Union Food Court", "Food Court", 38.54266, -121.74857),
-]
-
-
-SEED_MENU_ITEMS = [
-    ("Silo Market", "Peet's Protein Smoothie", 16, ["smoothie", "protein", "drink"]),
-    ("Silo Market", "Greek Yogurt Parfait", 14, ["yogurt", "breakfast"]),
-    ("Silo Food Trucks", "Chicken Burrito", 32, ["burrito", "chicken"]),
-    ("Memorial Union Food Court", "Turkey Sandwich", 22, ["sandwich", "turkey"]),
-    ("Memorial Union Food Court", "Protein Box", 18, ["protein", "snack"]),
-    ("Segundo Dining Commons", "Grilled Chicken Plate", 42, ["chicken", "high protein"]),
-    ("Tercero Dining Commons", "Egg White Scramble", 24, ["eggs", "breakfast"]),
-    ("Cuarto Dining Commons", "Tofu Stir Fry Bowl", 20, ["tofu", "bowl"]),
-]
-
-
-CREATE_TABLES_SQL = """
-CREATE TABLE IF NOT EXISTS venues (
-    id SERIAL PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,
-    category TEXT NOT NULL,
-    lat DOUBLE PRECISION NOT NULL,
-    lng DOUBLE PRECISION NOT NULL,
-    active BOOLEAN NOT NULL DEFAULT TRUE
-);
-
-CREATE TABLE IF NOT EXISTS menu_items (
-    id SERIAL PRIMARY KEY,
-    venue_id INTEGER NOT NULL REFERENCES venues(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    protein_grams INTEGER NOT NULL CHECK (protein_grams >= 0),
-    tags TEXT[] NOT NULL DEFAULT '{}',
-    active BOOLEAN NOT NULL DEFAULT TRUE
-);
-
-CREATE INDEX IF NOT EXISTS idx_menu_items_venue_id ON menu_items(venue_id);
-"""
+HALL_COORDS = {
+    "segundo": {
+        "venue_name": "Segundo Dining Commons",
+        "venue_category": "Dining Hall",
+        "venue_lat": 38.54161,
+        "venue_lng": -121.75774,
+    },
+    "tercero": {
+        "venue_name": "Tercero Dining Commons",
+        "venue_category": "Dining Hall",
+        "venue_lat": 38.54453,
+        "venue_lng": -121.74989,
+    },
+    "cuarto": {
+        "venue_name": "Cuarto Dining Commons",
+        "venue_category": "Dining Hall",
+        "venue_lat": 38.53595,
+        "venue_lng": -121.76145,
+    },
+    "latitude": {
+        "venue_name": "Latitude Restaurant",
+        "venue_category": "Dining Hall",
+        "venue_lat": 38.54758,
+        "venue_lng": -121.75953,
+    },
+}
 
 
 async def _ensure_pool() -> Any:
@@ -72,84 +51,63 @@ async def _ensure_pool() -> Any:
     return _pool
 
 
-async def _seed_if_empty(connection: Any) -> None:
-    venue_count = await connection.fetchval("SELECT COUNT(*) FROM venues")
-    if venue_count and venue_count > 0:
-        return
-
-    for name, category, lat, lng in SEED_VENUES:
-        await connection.execute(
-            "INSERT INTO venues(name, category, lat, lng) VALUES($1, $2, $3, $4)",
-            name,
-            category,
-            lat,
-            lng,
-        )
-
-    for venue_name, item_name, protein_grams, tags in SEED_MENU_ITEMS:
-        venue_id = await connection.fetchval("SELECT id FROM venues WHERE name = $1", venue_name)
-        await connection.execute(
-            """
-            INSERT INTO menu_items(venue_id, name, protein_grams, tags)
-            VALUES($1, $2, $3, $4)
-            """,
-            venue_id,
-            item_name,
-            protein_grams,
-            tags,
-        )
-
-
-async def ensure_db_initialized() -> None:
-    global _initialized
-    if _initialized:
-        return
-
-    async with _init_lock:
-        if _initialized:
-            return
-        pool = await _ensure_pool()
-        async with pool.acquire() as connection:
-            await connection.execute(CREATE_TABLES_SQL)
-            await _seed_if_empty(connection)
-        _initialized = True
-
-
 async def search_keyword_top_item_per_venue(keyword: str) -> list[dict]:
-    await ensure_db_initialized()
-
-    if not keyword.strip():
-        return []
-
-    like_pattern = f"%{keyword.lower()}%"
-    sql = """
-    SELECT DISTINCT ON (v.id)
-      v.id AS venue_id,
-      v.name AS venue_name,
-      v.category AS venue_category,
-      v.lat AS venue_lat,
-      v.lng AS venue_lng,
-      mi.id AS item_id,
-      mi.name AS item_name,
-      mi.protein_grams AS protein_grams,
-      mi.tags AS tags
-    FROM venues v
-    JOIN menu_items mi ON mi.venue_id = v.id
-    WHERE v.active = TRUE
-      AND mi.active = TRUE
-      AND (
-          LOWER(v.name) LIKE $1
-          OR LOWER(mi.name) LIKE $1
-          OR EXISTS (
-            SELECT 1 FROM unnest(mi.tags) AS t(tag)
-            WHERE LOWER(tag) LIKE $1
-          )
-      )
-    ORDER BY v.id, mi.protein_grams DESC, mi.id ASC;
     """
+    Query imported dining-hall rows from public."TestData".
+    Returns item-level candidates (deduped by hall + item) across all halls.
+    """
+
+    keyword_clean = keyword.strip().lower()
+    like_pattern = f"%{keyword_clean}%"
+    # This SQL is the core data source for recommendations.
+    # It dedupes repeated menu rows and keeps strongest nutrition values per hall+item.
+    sql = """
+    WITH normalized AS (
+      SELECT
+        LOWER(td.dining_hall) AS hall_key,
+        td.item_name,
+        MAX(td.protein_g) AS protein_g,
+        MAX(td.calories) AS calories
+      FROM public."TestData" td
+      WHERE td.protein_g IS NOT NULL
+        AND LOWER(td.dining_hall) = ANY($1::text[])
+        AND (
+          $2 = ''
+          OR LOWER(td.dining_hall) LIKE $3
+          OR LOWER(td.item_name) LIKE $3
+          OR LOWER(COALESCE(td.zone, '')) LIKE $3
+        )
+      GROUP BY LOWER(td.dining_hall), td.item_name
+    )
+    SELECT hall_key, item_name, protein_g, calories
+    FROM normalized
+    ORDER BY protein_g DESC, item_name ASC;
+    """
+
+    hall_keys = list(HALL_COORDS.keys())
 
     pool = await _ensure_pool()
     async with pool.acquire() as connection:
-        records = await connection.fetch(sql, like_pattern)
+        records = await connection.fetch(sql, hall_keys, keyword_clean, like_pattern)
 
-    return [dict(record) for record in records]
+    output: list[dict] = []
+    for record in records:
+        hall_key = record["hall_key"]
+        hall_meta = HALL_COORDS[hall_key]
+        output.append(
+            {
+                "venue_id": hall_key,
+                "venue_name": hall_meta["venue_name"],
+                "venue_category": hall_meta["venue_category"],
+                "venue_lat": hall_meta["venue_lat"],
+                "venue_lng": hall_meta["venue_lng"],
+                "item_name": record["item_name"],
+                "protein_grams": float(record["protein_g"]),
+                "calories": (
+                    float(record["calories"]) if record["calories"] is not None else None
+                ),
+                "tags": [],
+            }
+        )
+
+    return output

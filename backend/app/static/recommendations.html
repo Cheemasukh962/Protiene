@@ -59,6 +59,14 @@
       background: #f9f5ec;
     }
 
+    .subcard {
+      border: 1px dashed #c7bda8;
+      border-radius: 10px;
+      padding: 0.6rem;
+      margin-top: 0.5rem;
+      background: #fffdf8;
+    }
+
     .top {
       border-color: #2a7a4f;
       background: #edf7ef;
@@ -107,7 +115,46 @@
       <input id="max-results" type="number" min="1" max="10" value="5">
     </div>
 
+    <div class="row">
+      <label for="sort-mode"><strong>Sort mode</strong></label>
+      <select id="sort-mode">
+        <option value="protein">Top Protein (Campus-wide)</option>
+        <option value="closest">Closest Matches</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label for="result-mode"><strong>Result mode</strong></label>
+      <select id="result-mode">
+        <option value="global">Single Top List</option>
+        <option value="per_hall">Top Per Dining Hall</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label for="per-hall-limit"><strong>Per-hall limit</strong></label>
+      <select id="per-hall-limit">
+        <option value="5">Top 5 per hall</option>
+        <option value="10">Top 10 per hall</option>
+      </select>
+    </div>
+
     <button id="find-btn" type="button">Find Protein Options</button>
+
+    <div class="row" style="margin-top: 1rem;">
+      <button id="load-favorites-btn" type="button">Load Favorites</button>
+      <button id="load-tracker-btn" type="button" style="margin-left: 0.5rem;">Load Tracker (Available Now)</button>
+      <button id="load-tracker-schedule-btn" type="button" style="margin-left: 0.5rem;">Load Tracker Schedule</button>
+    </div>
+
+    <h3>Favorites</h3>
+    <pre id="favorites-output">No favorites loaded yet.</pre>
+
+    <h3>Tracker</h3>
+    <pre id="tracker-output">No tracker data loaded yet.</pre>
+
+    <h3>Tracker Schedule</h3>
+    <pre id="tracker-schedule-output">No tracker schedule loaded yet.</pre>
 
     <h3>Results</h3>
     <div id="cards"></div>
@@ -121,8 +168,17 @@
     const keywordInput = document.getElementById("keyword-input");
     const travelModeInput = document.getElementById("travel-mode");
     const maxResultsInput = document.getElementById("max-results");
+    const sortModeInput = document.getElementById("sort-mode");
+    const resultModeInput = document.getElementById("result-mode");
+    const perHallLimitInput = document.getElementById("per-hall-limit");
     const findButton = document.getElementById("find-btn");
+    const loadFavoritesButton = document.getElementById("load-favorites-btn");
+    const loadTrackerButton = document.getElementById("load-tracker-btn");
+    const loadTrackerScheduleButton = document.getElementById("load-tracker-schedule-btn");
     const cardsContainer = document.getElementById("cards");
+    const favoritesOutput = document.getElementById("favorites-output");
+    const trackerOutput = document.getElementById("tracker-output");
+    const trackerScheduleOutput = document.getElementById("tracker-schedule-output");
     const rawOutput = document.getElementById("raw-output");
 
     let currentOrigin = null;
@@ -141,16 +197,49 @@
       return responseJson;
     }
 
-    function renderRecommendationCards(responseJson) {
-      cardsContainer.innerHTML = "";
-      const recommendations = responseJson.recommendations || [];
-
-      if (recommendations.length === 0) {
-        const message = responseJson.message || "No matching protein options found.";
-        cardsContainer.innerHTML = `<div class="card">${message}</div>`;
-        return;
+    async function starFavorite(itemName) {
+      const response = await fetch("/api/favorites/star", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ item_name: itemName }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Failed to star item.");
       }
+      return data;
+    }
 
+    async function fetchFavorites() {
+      const response = await fetch("/api/favorites");
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Failed to load favorites.");
+      }
+      return data;
+    }
+
+    async function fetchTracker() {
+      const response = await fetch("/api/tracker/available-now");
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Failed to load tracker.");
+      }
+      return data;
+    }
+
+    async function fetchTrackerSchedule() {
+      const response = await fetch("/api/tracker/schedule");
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Failed to load tracker schedule.");
+      }
+      return data;
+    }
+
+    // Global renderer: single ranked list across all halls.
+    function renderGlobalCards(recommendations) {
+      cardsContainer.innerHTML = "";
       recommendations.forEach((recommendation, index) => {
         const card = document.createElement("div");
         card.className = `card ${index === 0 ? "top" : ""}`;
@@ -158,12 +247,85 @@
           `<strong>${index + 1}. ${recommendation.venue_name}</strong> (${recommendation.venue_category})<br>` +
           `Best Match: ${recommendation.item_name}<br>` +
           `Protein: ${recommendation.protein_grams}g<br>` +
+          `Calories: ${recommendation.calories ?? "N/A"}<br>` +
           `Distance: ${recommendation.distance_miles ?? "N/A"} miles<br>` +
           `Duration: ${recommendation.duration ?? "N/A"}<br>` +
           `Tags: ${(recommendation.tags || []).join(", ")}<br>` +
-          `<em>${recommendation.why_selected}</em>`;
+          `<em>${recommendation.why_selected}</em><br>` +
+          `<button type="button" class="star-btn" data-item-name="${recommendation.item_name.replace(/"/g, "&quot;")}">Star Item</button>`;
         cardsContainer.appendChild(card);
       });
+    }
+
+    // Per-hall renderer: each dining hall gets its own top-N list.
+    function renderPerHallCards(perHallGroups) {
+      cardsContainer.innerHTML = "";
+      perHallGroups.forEach((group) => {
+        const hallBlock = document.createElement("div");
+        hallBlock.className = "card";
+        hallBlock.innerHTML = `<strong>${group.venue_name}</strong>`;
+
+        (group.items || []).forEach((item, idx) => {
+          const itemDiv = document.createElement("div");
+          itemDiv.className = "subcard";
+          itemDiv.innerHTML =
+            `${idx + 1}. ${item.item_name} | ${item.protein_grams}g` +
+            ` | Calories: ${item.calories ?? "N/A"}` +
+            ` | ${item.distance_miles ?? "N/A"} miles` +
+            ` <button type="button" class="star-btn" data-item-name="${item.item_name.replace(/"/g, "&quot;")}">Star Item</button>`;
+          hallBlock.appendChild(itemDiv);
+        });
+
+        cardsContainer.appendChild(hallBlock);
+      });
+    }
+
+    function renderRecommendationCards(responseJson) {
+      cardsContainer.innerHTML = "";
+      const recommendations = responseJson.recommendations || [];
+      const perHallRecommendations = responseJson.per_hall_recommendations || [];
+
+      if (recommendations.length === 0 && perHallRecommendations.length === 0) {
+        const message = responseJson.message || "No matching protein options found.";
+        cardsContainer.innerHTML = `<div class="card">${message}</div>`;
+        return;
+      }
+
+      if (responseJson.result_mode === "per_hall") {
+        renderPerHallCards(perHallRecommendations);
+      } else {
+        renderGlobalCards(recommendations);
+      }
+    }
+
+    async function loadFavoritesIntoPanel() {
+      favoritesOutput.textContent = "Loading favorites...";
+      try {
+        const data = await fetchFavorites();
+        favoritesOutput.textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        favoritesOutput.textContent = `Error: ${error.message}`;
+      }
+    }
+
+    async function loadTrackerIntoPanel() {
+      trackerOutput.textContent = "Loading tracker...";
+      try {
+        const data = await fetchTracker();
+        trackerOutput.textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        trackerOutput.textContent = `Error: ${error.message}`;
+      }
+    }
+
+    async function loadTrackerScheduleIntoPanel() {
+      trackerScheduleOutput.textContent = "Loading tracker schedule...";
+      try {
+        const data = await fetchTrackerSchedule();
+        trackerScheduleOutput.textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        trackerScheduleOutput.textContent = `Error: ${error.message}`;
+      }
     }
 
     useCurrentButton.addEventListener("click", () => {
@@ -188,36 +350,34 @@
 
     findButton.addEventListener("click", async () => {
       const keyword = keywordInput.value.trim();
-      if (!keyword) {
-        rawOutput.textContent = "Please enter a keyword first.";
-        return;
-      }
-
       const typedOrigin = originTextInput.value.trim();
       const travelMode = travelModeInput.value;
       const maxResults = Number(maxResultsInput.value || "5");
+      const sortMode = sortModeInput.value;
+      const resultMode = resultModeInput.value;
+      const perHallLimit = Number(perHallLimitInput.value || "5");
 
-      let recommendationRequestBody = null;
-      if (typedOrigin) {
-        recommendationRequestBody = {
-          origin_mode: "typed",
-          origin_text: typedOrigin,
-          keyword: keyword,
-          travel_mode: travelMode,
-          max_results: maxResults,
-        };
-      } else if (currentOrigin) {
-        recommendationRequestBody = {
-          origin_mode: "current",
-          origin_latitude: currentOrigin.latitude,
-          origin_longitude: currentOrigin.longitude,
-          keyword: keyword,
-          travel_mode: travelMode,
-          max_results: maxResults,
-        };
-      } else {
-        rawOutput.textContent = "Set origin first: click current location OR type origin manually.";
-        return;
+      const recommendationRequestBody = {
+        keyword: keyword,
+        travel_mode: travelMode,
+        max_results: maxResults,
+        sort_mode: sortMode,
+        result_mode: resultMode,
+        per_hall_limit: perHallLimit,
+      };
+
+      if (sortMode === "closest") {
+        if (typedOrigin) {
+          recommendationRequestBody.origin_mode = "typed";
+          recommendationRequestBody.origin_text = typedOrigin;
+        } else if (currentOrigin) {
+          recommendationRequestBody.origin_mode = "current";
+          recommendationRequestBody.origin_latitude = currentOrigin.latitude;
+          recommendationRequestBody.origin_longitude = currentOrigin.longitude;
+        } else {
+          rawOutput.textContent = "Closest mode needs origin: current location or typed origin.";
+          return;
+        }
       }
 
       rawOutput.textContent = "Finding protein options...";
@@ -228,6 +388,41 @@
         renderRecommendationCards(responseJson);
         rawOutput.textContent = JSON.stringify(responseJson, null, 2);
       } catch (error) {
+        rawOutput.textContent = `Error: ${error.message}`;
+      }
+    });
+
+    loadFavoritesButton.addEventListener("click", async () => {
+      await loadFavoritesIntoPanel();
+    });
+
+    loadTrackerButton.addEventListener("click", async () => {
+      await loadTrackerIntoPanel();
+    });
+
+    loadTrackerScheduleButton.addEventListener("click", async () => {
+      await loadTrackerScheduleIntoPanel();
+    });
+
+    cardsContainer.addEventListener("click", async (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      if (!target.classList.contains("star-btn")) {
+        return;
+      }
+      const itemName = target.getAttribute("data-item-name");
+      if (!itemName) {
+        return;
+      }
+      target.textContent = "Starring...";
+      try {
+        await starFavorite(itemName);
+        target.textContent = "Starred";
+        await loadFavoritesIntoPanel();
+      } catch (error) {
+        target.textContent = "Star Item";
         rawOutput.textContent = `Error: ${error.message}`;
       }
     });

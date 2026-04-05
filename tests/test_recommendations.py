@@ -64,6 +64,7 @@ def test_recommendations_distance_first_then_protein(monkeypatch: pytest.MonkeyP
             "keyword": "smoothie",
             "travel_mode": "walking",
             "max_results": 5,
+            "sort_mode": "closest",
         },
     )
 
@@ -125,6 +126,7 @@ def test_recommendations_typed_origin_success(monkeypatch: pytest.MonkeyPatch) -
             "keyword": "smoothie",
             "travel_mode": "walking",
             "max_results": 3,
+            "sort_mode": "closest",
         },
     )
 
@@ -153,6 +155,7 @@ def test_recommendations_no_matches_returns_empty(monkeypatch: pytest.MonkeyPatc
             "keyword": "unmatched_keyword",
             "travel_mode": "walking",
             "max_results": 5,
+            "sort_mode": "closest",
         },
     )
 
@@ -170,8 +173,154 @@ def test_recommendations_invalid_origin_mode(monkeypatch: pytest.MonkeyPatch) ->
             "keyword": "smoothie",
             "travel_mode": "walking",
             "max_results": 5,
+            "sort_mode": "closest",
         },
     )
 
     assert response.status_code == 400
     assert response.json()["detail"] == "origin_mode must be 'current' or 'typed'"
+
+
+def test_recommendations_default_protein_mode_without_origin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_search_keyword_top_item_per_venue(keyword: str) -> list[dict]:
+        return [
+            {
+                "venue_id": "segundo",
+                "venue_name": "Segundo Dining Commons",
+                "venue_category": "Dining Hall",
+                "venue_lat": 38.54161,
+                "venue_lng": -121.75774,
+                "item_name": "Item A",
+                "protein_grams": 20,
+                "tags": [],
+            },
+            {
+                "venue_id": "tercero",
+                "venue_name": "Tercero Dining Commons",
+                "venue_category": "Dining Hall",
+                "venue_lat": 38.54453,
+                "venue_lng": -121.74989,
+                "item_name": "Item B",
+                "protein_grams": 40,
+                "tags": [],
+            },
+        ]
+
+    async def fake_route_distance_to_destination(
+        origin_latitude: float,
+        origin_longitude: float,
+        destination_latitude: float,
+        destination_longitude: float,
+        travel_mode: str = "walking",
+    ) -> dict:
+        raise AssertionError("Distance API should not be called in protein mode")
+
+    monkeypatch.setattr(
+        recommendations_module,
+        "search_keyword_top_item_per_venue",
+        fake_search_keyword_top_item_per_venue,
+    )
+    monkeypatch.setattr(
+        recommendations_module,
+        "route_distance_to_destination",
+        fake_route_distance_to_destination,
+    )
+
+    response = client.post(
+        "/api/recommendations",
+        json={
+            "keyword": "",
+            "max_results": 5,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["sort_mode"] == "protein"
+    assert data["recommendations"][0]["item_name"] == "Item B"
+    assert data["recommendations"][1]["item_name"] == "Item A"
+
+
+def test_recommendations_closest_global_diversifies_halls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_search_keyword_top_item_per_venue(keyword: str) -> list[dict]:
+        return [
+            {
+                "venue_id": "tercero",
+                "venue_name": "Tercero Dining Commons",
+                "venue_category": "Dining Hall",
+                "venue_lat": 38.54453,
+                "venue_lng": -121.74989,
+                "item_name": "T Item 1",
+                "protein_grams": 30,
+                "calories": 400,
+                "tags": [],
+            },
+            {
+                "venue_id": "tercero",
+                "venue_name": "Tercero Dining Commons",
+                "venue_category": "Dining Hall",
+                "venue_lat": 38.54453,
+                "venue_lng": -121.74989,
+                "item_name": "T Item 2",
+                "protein_grams": 20,
+                "calories": 300,
+                "tags": [],
+            },
+            {
+                "venue_id": "segundo",
+                "venue_name": "Segundo Dining Commons",
+                "venue_category": "Dining Hall",
+                "venue_lat": 38.54161,
+                "venue_lng": -121.75774,
+                "item_name": "S Item 1",
+                "protein_grams": 25,
+                "calories": 350,
+                "tags": [],
+            },
+        ]
+
+    async def fake_route_distance_to_destination(
+        origin_latitude: float,
+        origin_longitude: float,
+        destination_latitude: float,
+        destination_longitude: float,
+        travel_mode: str = "walking",
+    ) -> dict:
+        if destination_latitude == 38.54453:
+            return {"distance_miles": 0.4, "duration": "500s"}
+        return {"distance_miles": 0.7, "duration": "900s"}
+
+    monkeypatch.setattr(
+        recommendations_module,
+        "search_keyword_top_item_per_venue",
+        fake_search_keyword_top_item_per_venue,
+    )
+    monkeypatch.setattr(
+        recommendations_module,
+        "route_distance_to_destination",
+        fake_route_distance_to_destination,
+    )
+
+    response = client.post(
+        "/api/recommendations",
+        json={
+            "origin_mode": "current",
+            "origin_latitude": 38.5400,
+            "origin_longitude": -121.7500,
+            "keyword": "chicken",
+            "travel_mode": "walking",
+            "max_results": 3,
+            "sort_mode": "closest",
+            "result_mode": "global",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    venues = [entry["venue_name"] for entry in data["recommendations"]]
+    assert venues[0] == "Tercero Dining Commons"
+    assert venues[1] == "Segundo Dining Commons"

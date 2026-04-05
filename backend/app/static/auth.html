@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DProtein Auth Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 2rem;
+      background: #f7f4ed;
+      color: #1f1f1f;
+    }
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+      background: #fffdf8;
+      border: 1px solid #d9d1bf;
+      border-radius: 16px;
+      padding: 1.5rem;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
+    }
+    .row {
+      margin-bottom: 0.9rem;
+    }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #d0c7b6;
+      border-radius: 10px;
+      padding: 0.65rem;
+    }
+    button {
+      border: 0;
+      border-radius: 999px;
+      background: #205c3b;
+      color: #fff;
+      padding: 0.75rem 1.1rem;
+      cursor: pointer;
+      margin-right: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+    pre {
+      background: #f3eee2;
+      border-radius: 10px;
+      padding: 0.9rem;
+      overflow: auto;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Auth Test Page</h1>
+    <p><a href="/">Back to Home</a></p>
+    <p>Use this page to create/login users and confirm PostgreSQL updates in <code>users</code>.</p>
+
+    <div class="row">
+      <label for="email"><strong>Email</strong></label>
+      <input id="email" type="email" placeholder="you@example.com">
+    </div>
+
+    <div class="row">
+      <label for="password"><strong>Password (min 8 chars)</strong></label>
+      <input id="password" type="password" placeholder="password123">
+    </div>
+
+    <div class="row">
+      <button id="register-btn" type="button">Register</button>
+      <button id="login-btn" type="button">Login</button>
+      <button id="me-btn" type="button">Check /auth/me</button>
+      <button id="logout-btn" type="button">Logout</button>
+    </div>
+
+    <h3>Response</h3>
+    <pre id="output">Ready.</pre>
+  </main>
+
+  <script>
+    const emailInput = document.getElementById("email");
+    const passwordInput = document.getElementById("password");
+    const output = document.getElementById("output");
+    const registerBtn = document.getElementById("register-btn");
+    const loginBtn = document.getElementById("login-btn");
+    const meBtn = document.getElementById("me-btn");
+    const logoutBtn = document.getElementById("logout-btn");
+
+    async function postJson(url, body) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      const data = await response.json().catch(() => ({}));
+      return { ok: response.ok, status: response.status, data };
+    }
+
+    async function getJson(url) {
+      const response = await fetch(url, { credentials: "include" });
+      const data = await response.json().catch(() => ({}));
+      return { ok: response.ok, status: response.status, data };
+    }
+
+    registerBtn.addEventListener("click", async () => {
+      const email = emailInput.value.trim();
+      const password = passwordInput.value;
+      if (!email || !password) {
+        output.textContent = "Email and password are required.";
+        return;
+      }
+      output.textContent = "Registering...";
+      const result = await postJson("/auth/register", { email, password });
+      output.textContent = JSON.stringify(result, null, 2);
+    });
+
+    loginBtn.addEventListener("click", async () => {
+      const email = emailInput.value.trim();
+      const password = passwordInput.value;
+      if (!email || !password) {
+        output.textContent = "Email and password are required.";
+        return;
+      }
+      output.textContent = "Logging in...";
+      const result = await postJson("/auth/login", { email, password });
+      output.textContent = JSON.stringify(result, null, 2);
+    });
+
+    meBtn.addEventListener("click", async () => {
+      output.textContent = "Checking auth/me...";
+      const result = await getJson("/auth/me");
+      output.textContent = JSON.stringify(result, null, 2);
+    });
+
+    logoutBtn.addEventListener("click", async () => {
+      output.textContent = "Logging out...";
+      const result = await postJson("/auth/logout", {});
+      output.textContent = JSON.stringify(result, null, 2);
+    });
+  </script>
+</body>
+</html>
