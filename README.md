@@ -1,5 +1,11 @@
 # DProtein
 
+# VIDEO DEMO :
+
+
+#Current Problem
+Works locally in terms of storing users but when brining it to vercel I am having problems
+
 DProtein is a full-stack project to help UC Davis students quickly find high-protein food options nearby.
 It combines location-aware ranking, route guidance, account auth, favorites, and a tracker view.
 
