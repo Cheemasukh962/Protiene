@@ -5,7 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import { ApiError } from "../lib/api";
 
 export default function SignupPage() {
-  const { register } = useAuth();
+  const { login, register } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
@@ -26,10 +26,11 @@ export default function SignupPage() {
     setSubmitting(true);
     try {
       await register(email.trim(), password);
-      setSuccess("Account created. Redirecting to login...");
+      await login(email.trim(), password);
+      setSuccess("Account created. Logging you in...");
       window.setTimeout(() => {
-        navigate("/login");
-      }, 900);
+        navigate("/");
+      }, 500);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.detail);
