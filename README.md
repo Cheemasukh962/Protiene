@@ -1,83 +1,195 @@
-# Protein Finder (DProtein) NEED JUST ONE HOUR PLEASE ALMSOT DONE WOKRING ON SETUP OF MY VERCEL IF NOT I WILL RECORD A VIDEO
+# DProtein
 
-Protein Finder is a FastAPI + React app focused on route distance and protein-aware food recommendations around UC Davis.
+DProtein is a full-stack project to help UC Davis students quickly find high-protein food options nearby.
+It combines location-aware ranking, route guidance, account auth, favorites, and a tracker view.
 
-## Current Status
+Backend is hosted on Railway (`FastAPI + PostgreSQL`) and frontend is hosted on Vercel (`React + Vite + Tailwind`).
 
-### Implemented
+## Project Goal
 
-- Browser origin support:
-  - current location (geolocation permission)
-  - typed origin text (geocoded)
-- Destination/place routing with Google APIs:
-  - geocoding (`address/place text -> lat/lng`)
-  - route distance and duration
-  - driving and walking modes
-  - encoded route polyline
-  - turn-by-turn steps
-- Recommendation MVP (`POST /api/recommendations`):
-  - keyword input (example: `smoothie`)
-  - Postgres-backed venue/menu lookup
-  - ranking rule: closest distance first, then higher protein
-  - backend service layer in `backend/app/services/recommendations.py`
-- React frontend app (`frontend/`) with:
-  - `/login` and `/signup` auth pages
-  - `/` progressive location + search + results flow
-  - `/route` route summary + turn-by-turn steps
-- Legacy static pages still available under `backend/app/static/*` during migration.
-- Tests:
-  - `tests/test_distance.py`
-  - `tests/test_recommendations.py`
+Build a practical recommendation app that demonstrates:
 
-### Not Finished Yet
+- Full-stack engineering (frontend + backend + database)
+- Non-trivial backend logic (distance + protein ranking + day/meal filtering)
+- External API integration (Google Maps APIs)
+- System design thinking (guest/user split, persistence, deployment architecture)
 
-- Persistent user history storage (searches, clicks, recommendations shown)
-- Production data ingestion for real dining hall/menu updates
-- Scraping or feed ingestion for UC Davis dining sources
-- Hours/open-now filtering
-- Production deployment + monitoring + key hardening
+## What It Does
+
+- Accepts user location (current GPS or typed origin)
+- Filters recommendations by meal and keyword
+- Ranks results by closest distance first, then protein
+- Shows route details (distance, ETA, steps, map polyline)
+- Allows starring favorites
+- Tracks favorite item availability by day/meal
+- Supports both guest mode and signed-in user mode
 
 ## Tech Stack
 
 - Backend: `FastAPI`
-- DB: `PostgreSQL` (`asyncpg`)
-- Frontend: `React + TypeScript + Tailwind` (Vite)
-- External APIs: Google Geocoding + Google Routes
-- Tests: `pytest`
+- Frontend: `React + TypeScript + Tailwind + Vite`
+- Database: `PostgreSQL` (`asyncpg`)
+- Auth: HTTP-only JWT cookies
+- External APIs:
+  - Google Geocoding / Reverse Geocoding
+  - Google Routes
+- Hosting:
+  - Backend + Postgres: Railway
+  - Frontend: Vercel
+
+## High-Level Architecture
+
+1. React frontend sends requests to FastAPI backend.
+2. FastAPI handles business logic and DB queries.
+3. FastAPI calls Google APIs for geocoding and route distance.
+4. FastAPI returns ranked recommendations + route metadata.
+5. Postgres stores user records, favorites, guest profiles, and dining item data.
+
+## Recommendation Logic
+
+Current recommendation flow (`POST /api/recommendations`):
+
+1. Validate request fields:
+  - `origin_mode`, `travel_mode`, `sort_mode`, `result_mode`, `meal_filter`, `day_override`
+2. Resolve origin:
+  - GPS coordinates (`current`) or geocode typed origin (`typed`)
+3. Query Postgres dining rows (`public."TestData"`) with optional:
+  - keyword filter
+  - day filter
+  - meal filter
+4. If `sort_mode=closest`, call route API for each venue to get distance/duration.
+5. Rank:
+  - primary: smallest route distance
+  - secondary: highest protein grams
+6. Return top results + context fields (`applied_day`, `applied_meal`), calories, hours URL, and route metadata.
+
+## Guest vs User Data Model
+
+Guest mode and signed-in mode are intentionally separate.
+
+- Guest mode:
+  - Cookie: `dprotein_guest_id`
+  - Tables: `guest_profiles`, `favorite_items`
+  - Endpoints under `/api/favorites/*` and `/api/tracker/*`
+- Signed-in mode:
+  - Cookie: `dprotein_access_token` (JWT)
+  - Tables: `users`, `user_favorite_items`
+  - Endpoints under `/api/user/*`
+
+This keeps guest data isolated from user-account data.
+
+## Core Database Tables
+
+- `public."TestData"`
+  - dining hall rows used by recommendation + tracker logic
+- `users`
+  - email/password auth users
+- `guest_profiles`
+  - per-guest identity via cookie
+- `favorite_items`
+  - guest favorites
+- `user_favorite_items`
+  - user favorites
 
 ## API Endpoints
 
+### Health and basic config
+
 - `GET /api/health`
+- `GET /api/public-map-config`
+
+### Location and routing
+
 - `POST /api/location`
 - `POST /api/location/reverse-geocode`
 - `POST /api/distance`
 - `POST /api/route`
+
+### Recommendations
+
 - `POST /api/recommendations`
-- `GET /api/public-map-config`
 
-## Backend Logic Ownership
+Supported request fields include:
 
-- Frontend (`recommendations.html`) only:
-  - collects user input
-  - calls `/api/recommendations`
-  - renders returned cards/results
-- Backend owns recommendation logic:
-  - input validation
-  - origin resolution (current vs typed)
-  - keyword filtering from Postgres
-  - route distance calls to Google Routes
-  - ranking (distance first, protein second)
+- `origin_mode`: `current | typed`
+- `origin_latitude`, `origin_longitude`, `origin_text`
+- `meal_filter`: `Breakfast | Lunch | Dinner`
+- `day_override`: weekday name
+- `keyword`
+- `travel_mode`: `walking | driving`
+- `sort_mode`: `closest | protein`
+- `result_mode`: `global | per_hall`
 
-The `/api/recommendations` endpoint now delegates to:
+### Auth
 
-- `backend/app/services/recommendations.py`
+- `POST /auth/register`
+- `POST /auth/login`
+- `GET /auth/me`
+- `POST /auth/logout`
+
+### Guest favorites and tracker
+
+- `POST /api/favorites/star`
+- `GET /api/favorites`
+- `DELETE /api/favorites/{favorite_id}`
+- `GET /api/tracker/available-now`
+- `GET /api/tracker/schedule`
+- `GET /api/tracker/overview`
+
+### User favorites and tracker
+
+- `POST /api/user/favorites/star`
+- `GET /api/user/favorites`
+- `DELETE /api/user/favorites/{favorite_id}`
+- `GET /api/user/tracker/available-now`
+- `GET /api/user/tracker/schedule`
+- `GET /api/user/tracker/overview`
+
+## Frontend Routes
+
+- `/login`
+- `/signup`
+- `/`
+- `/route`
+- `/tracker`
+
+Routing behavior:
+
+- App defaults to login-first flow.
+- User can explicitly continue as guest.
+- Home/route/tracker are protected by auth or guest-mode gate.
+
+## Local Setup
+
+## 1) Backend
+
+```powershell
+cd c:\Users\cheem\dprotein
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+uvicorn backend.app.main:app --reload --host localhost --port 8000
+```
+
+## 2) Frontend
+
+```powershell
+cd c:\Users\cheem\dprotein\frontend
+cmd /c npm install
+cmd /c npm run dev
+```
+
+Local URLs:
+
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:8000`
 
 ## Environment Variables
 
-Create a `.env` file in the repo root:
+Root `.env`:
 
 ```env
-GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_KEY
+GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
 POSTGRES_DSN=postgresql://postgres:YOUR_PASSWORD@localhost:5432/postgres
 JWT_SECRET=CHANGE_ME_TO_A_LONG_RANDOM_SECRET
 JWT_ALGORITHM=HS256
@@ -88,78 +200,103 @@ COOKIE_SAMESITE=lax
 CORS_ALLOWED_ORIGINS=http://localhost:8000,http://localhost:5173,http://127.0.0.1:8000,http://127.0.0.1:5173
 ```
 
-## Run Locally (Backend)
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-uvicorn backend.app.main:app --reload
-```
-
-Open:
-
-- `http://localhost:8000/`
-
-## Run Locally (Frontend React)
-
-```powershell
-cd c:\Users\cheem\dprotein\frontend
-cmd /c npm install
-cmd /c npm run dev
-```
-
-Open:
-
-- `http://localhost:5173`
-
-The React app reads `VITE_API_BASE_URL` from `frontend/.env.local`.
-Use:
+`frontend/.env.local`:
 
 ```env
 VITE_API_BASE_URL=http://localhost:8000
 ```
 
-## Auth + Cookies + CORS
+## Railway + Vercel Deployment
 
-- Frontend API calls use `credentials: include` for HTTP-only cookie auth.
-- Backend CORS must include frontend origin(s).
-- `JWT_SECRET` is required for login/session endpoints (`/auth/login`, `/auth/me`, and `/api/user/*`).
-- Use a single local host pattern for frontend + backend (`localhost` for both) to avoid cookie split issues.
-- Default local origins now include:
-  - `http://localhost:5173`
-  - `http://127.0.0.1:5173`
+## Railway (backend + DB)
 
-## Railway + Vercel Deployment Env
-
-Backend on Railway:
+1. Deploy backend service from branch `V3`.
+2. Add Railway Postgres service.
+3. In backend service variables, set:
 
 ```env
-POSTGRES_DSN=<Railway Postgres URL>
+POSTGRES_DSN=${{ Postgres.DATABASE_URL }}
+GOOGLE_MAPS_API_KEY=<your key>
 JWT_SECRET=<long random secret>
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+COOKIE_NAME=dprotein_access_token
 COOKIE_SECURE=true
 COOKIE_SAMESITE=none
 CORS_ALLOWED_ORIGINS=https://<your-vercel-domain>,http://localhost:5173
 ```
 
-Frontend on Vercel:
+4. Backend start command:
 
-```env
-VITE_API_BASE_URL=https://<your-railway-backend-domain>
+```bash
+uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
 ```
 
-## PostgreSQL Notes
+5. Health check:
 
-- Recommendation data currently uses seeded tables:
-  - `venues`
-  - `menu_items`
-- Seed is created automatically on first recommendation query if tables are empty.
-- Current build reads from Postgres for recommendations, but does **not** yet store user search history.
+```text
+https://<railway-backend-domain>/api/health
+```
 
-## Near-Term Roadmap
+## Vercel (frontend)
 
-1. Add persistent logging tables for user searches and shown recommendations.
-2. Build a menu data pipeline (manual admin import first, scraping second).
-3. Add open-hours filtering and confidence metadata on each recommendation.
-4. Deploy React frontend on Vercel and FastAPI + Postgres on Railway.
-5. Add admin tools for editing venues/items without code changes.
+1. Import same repo.
+2. Root directory: `frontend`
+3. Framework: `Vite`
+4. Env:
+
+```env
+VITE_API_BASE_URL=https://<railway-backend-domain>
+```
+
+5. Deploy.
+
+Note: `frontend/vercel.json` includes SPA rewrites so routes like `/login` and `/tracker` work directly.
+
+## Importing Dining Data into Railway Postgres
+
+Railway Postgres is separate from local Postgres, so data must be imported.
+
+Typical flow:
+
+1. Copy Railway Postgres public connection URL.
+2. Import CSV into `public."TestData"` using `psql` or pgAdmin.
+3. Verify row count:
+
+```sql
+SELECT COUNT(*) FROM public."TestData";
+```
+
+If `TestData` is empty, recommendation and tracker endpoints cannot return real menu results.
+
+## Test and Verification Checklist
+
+- `GET /api/health` returns OK
+- Signup/login/logout works with cookie auth
+- Home recommendations return ranked results
+- Star toggling works from cards
+- Tracker cards show favorite schedules
+- Guest and user data remain separate
+- Route page loads distance/directions
+- Refresh keeps signed-in user session
+
+## Why Railway + Vercel
+
+This split was chosen for clarity and scalability:
+
+- Railway: backend logic + persistent DB
+- Vercel: fast frontend deployment and delivery
+
+Operationally:
+
+- Backend/data updates are handled in Railway
+- UI updates are handled in Vercel
+
+This makes deployments cleaner and responsibilities easier to explain to reviewers.
+
+## Current Focus / Next Steps
+
+- Improve production reliability and observability
+- Add richer tracker notifications
+- Expand non-dining-hall menu sources
+- Continue polishing UI/UX and demo flow
