@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Any
 
 from backend.app.services.auth import ensure_auth_tables
+from backend.app.services.day_filters import resolve_applied_day
 from backend.app.services.postgres_db import _ensure_pool
 
 
@@ -196,3 +197,96 @@ async def tracker_schedule_for_user(user_id: int) -> dict[str, Any]:
             }
         )
     return {"schedule": schedule}
+
+
+async def tracker_overview_for_user(
+    user_id: int,
+    day_override: str | None = None,
+) -> dict[str, Any]:
+    await ensure_user_favorites_tables()
+    applied_day = resolve_applied_day(day_override)
+
+    pool = await _ensure_pool()
+    async with pool.acquire() as connection:
+        favorites_rows = await connection.fetch(
+            """
+            SELECT id, item_name_original, created_at
+            FROM user_favorite_items
+            WHERE user_id = $1
+            ORDER BY created_at DESC
+            """,
+            user_id,
+        )
+        schedule_rows = await connection.fetch(
+            """
+            SELECT
+                ufi.id AS favorite_id,
+                td.item_name AS item_name,
+                td.dining_hall,
+                td.day_of_week,
+                td.meal,
+                MAX(td.protein_g) AS protein_g,
+                MAX(td.calories) AS calories
+            FROM user_favorite_items ufi
+            JOIN public."TestData" td
+              ON ufi.item_name_normalized = LOWER(TRIM(td.item_name))
+            WHERE ufi.user_id = $1
+              AND td.protein_g IS NOT NULL
+            GROUP BY ufi.id, td.item_name, td.dining_hall, td.day_of_week, td.meal
+            ORDER BY
+              ufi.id,
+              CASE td.day_of_week
+                WHEN 'Monday' THEN 1
+                WHEN 'Tuesday' THEN 2
+                WHEN 'Wednesday' THEN 3
+                WHEN 'Thursday' THEN 4
+                WHEN 'Friday' THEN 5
+                WHEN 'Saturday' THEN 6
+                WHEN 'Sunday' THEN 7
+                ELSE 99
+              END,
+              CASE td.meal
+                WHEN 'Breakfast' THEN 1
+                WHEN 'Lunch' THEN 2
+                WHEN 'Dinner' THEN 3
+                ELSE 99
+              END,
+              td.dining_hall ASC
+            """,
+            user_id,
+        )
+
+    favorites_map: dict[int, dict[str, Any]] = {}
+    ordered_favorites: list[dict[str, Any]] = []
+
+    for row in favorites_rows:
+        favorite = {
+            "favorite_id": row["id"],
+            "item_name": row["item_name_original"],
+            "available_today": False,
+            "today_slots": [],
+            "schedule": [],
+        }
+        favorites_map[row["id"]] = favorite
+        ordered_favorites.append(favorite)
+
+    for row in schedule_rows:
+        favorite = favorites_map.get(row["favorite_id"])
+        if favorite is None:
+            continue
+
+        slot = {
+            "item_name": row["item_name"],
+            "dining_hall": row["dining_hall"],
+            "day_of_week": row["day_of_week"],
+            "meal": row["meal"],
+            "protein_grams": float(row["protein_g"]),
+            "calories": float(row["calories"]) if row["calories"] is not None else None,
+        }
+        favorite["schedule"].append(slot)
+
+        if row["day_of_week"] == applied_day:
+            favorite["today_slots"].append(slot)
+            favorite["available_today"] = True
+
+    return {"applied_day": applied_day, "favorites": ordered_favorites}

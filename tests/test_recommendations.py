@@ -9,7 +9,11 @@ client = TestClient(app)
 
 
 def test_recommendations_distance_first_then_protein(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_search_keyword_top_item_per_venue(keyword: str) -> list[dict]:
+    async def fake_search_keyword_top_item_per_venue(
+        keyword: str,
+        day_of_week: str | None = None,
+        meal_filter: str | None = None,
+    ) -> list[dict]:
         return [
             {
                 "venue_id": 1,
@@ -19,6 +23,7 @@ def test_recommendations_distance_first_then_protein(monkeypatch: pytest.MonkeyP
                 "venue_lng": -121.74857,
                 "item_name": "Turkey Sandwich",
                 "protein_grams": 22,
+                "hours_url": "https://example.com/mu",
                 "tags": ["sandwich", "turkey"],
             },
             {
@@ -29,6 +34,7 @@ def test_recommendations_distance_first_then_protein(monkeypatch: pytest.MonkeyP
                 "venue_lng": -121.75273,
                 "item_name": "Peet's Protein Smoothie",
                 "protein_grams": 16,
+                "hours_url": "https://example.com/silo",
                 "tags": ["smoothie", "protein"],
             },
         ]
@@ -83,7 +89,11 @@ def test_recommendations_typed_origin_success(monkeypatch: pytest.MonkeyPatch) -
             "longitude": -121.750,
         }
 
-    async def fake_search_keyword_top_item_per_venue(keyword: str) -> list[dict]:
+    async def fake_search_keyword_top_item_per_venue(
+        keyword: str,
+        day_of_week: str | None = None,
+        meal_filter: str | None = None,
+    ) -> list[dict]:
         return [
             {
                 "venue_id": 2,
@@ -93,6 +103,7 @@ def test_recommendations_typed_origin_success(monkeypatch: pytest.MonkeyPatch) -
                 "venue_lng": -121.75273,
                 "item_name": "Peet's Protein Smoothie",
                 "protein_grams": 16,
+                "hours_url": "https://example.com/silo",
                 "tags": ["smoothie", "protein"],
             }
         ]
@@ -137,7 +148,11 @@ def test_recommendations_typed_origin_success(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_recommendations_no_matches_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_search_keyword_top_item_per_venue(keyword: str) -> list[dict]:
+    async def fake_search_keyword_top_item_per_venue(
+        keyword: str,
+        day_of_week: str | None = None,
+        meal_filter: str | None = None,
+    ) -> list[dict]:
         return []
 
     monkeypatch.setattr(
@@ -184,7 +199,11 @@ def test_recommendations_invalid_origin_mode(monkeypatch: pytest.MonkeyPatch) ->
 def test_recommendations_default_protein_mode_without_origin(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_search_keyword_top_item_per_venue(keyword: str) -> list[dict]:
+    async def fake_search_keyword_top_item_per_venue(
+        keyword: str,
+        day_of_week: str | None = None,
+        meal_filter: str | None = None,
+    ) -> list[dict]:
         return [
             {
                 "venue_id": "segundo",
@@ -194,6 +213,7 @@ def test_recommendations_default_protein_mode_without_origin(
                 "venue_lng": -121.75774,
                 "item_name": "Item A",
                 "protein_grams": 20,
+                "hours_url": "https://example.com/segundo",
                 "tags": [],
             },
             {
@@ -204,6 +224,7 @@ def test_recommendations_default_protein_mode_without_origin(
                 "venue_lng": -121.74989,
                 "item_name": "Item B",
                 "protein_grams": 40,
+                "hours_url": "https://example.com/tercero",
                 "tags": [],
             },
         ]
@@ -246,7 +267,11 @@ def test_recommendations_default_protein_mode_without_origin(
 def test_recommendations_closest_global_diversifies_halls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_search_keyword_top_item_per_venue(keyword: str) -> list[dict]:
+    async def fake_search_keyword_top_item_per_venue(
+        keyword: str,
+        day_of_week: str | None = None,
+        meal_filter: str | None = None,
+    ) -> list[dict]:
         return [
             {
                 "venue_id": "tercero",
@@ -257,6 +282,7 @@ def test_recommendations_closest_global_diversifies_halls(
                 "item_name": "T Item 1",
                 "protein_grams": 30,
                 "calories": 400,
+                "hours_url": "https://example.com/tercero",
                 "tags": [],
             },
             {
@@ -268,6 +294,7 @@ def test_recommendations_closest_global_diversifies_halls(
                 "item_name": "T Item 2",
                 "protein_grams": 20,
                 "calories": 300,
+                "hours_url": "https://example.com/tercero",
                 "tags": [],
             },
             {
@@ -279,6 +306,7 @@ def test_recommendations_closest_global_diversifies_halls(
                 "item_name": "S Item 1",
                 "protein_grams": 25,
                 "calories": 350,
+                "hours_url": "https://example.com/segundo",
                 "tags": [],
             },
         ]
@@ -324,3 +352,72 @@ def test_recommendations_closest_global_diversifies_halls(
     venues = [entry["venue_name"] for entry in data["recommendations"]]
     assert venues[0] == "Tercero Dining Commons"
     assert venues[1] == "Segundo Dining Commons"
+
+
+def test_recommendations_with_meal_filter_applies_day_and_meal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_day: str | None = None
+    captured_meal: str | None = None
+
+    async def fake_search_keyword_top_item_per_venue(
+        keyword: str,
+        day_of_week: str | None = None,
+        meal_filter: str | None = None,
+    ) -> list[dict]:
+        nonlocal captured_day, captured_meal
+        captured_day = day_of_week
+        captured_meal = meal_filter
+        return [
+            {
+                "venue_id": "segundo",
+                "venue_name": "Segundo Dining Commons",
+                "venue_category": "Dining Hall",
+                "venue_lat": 38.54161,
+                "venue_lng": -121.75774,
+                "item_name": "Chicken Bowl",
+                "protein_grams": 33,
+                "calories": 420,
+                "hours_url": "https://housing.ucdavis.edu/dining/dining-commons/segundo/",
+                "tags": [],
+            }
+        ]
+
+    monkeypatch.setattr(
+        recommendations_module,
+        "search_keyword_top_item_per_venue",
+        fake_search_keyword_top_item_per_venue,
+    )
+
+    response = client.post(
+        "/api/recommendations",
+        json={
+            "keyword": "chicken",
+            "meal_filter": "Lunch",
+            "day_override": "Monday",
+            "max_results": 5,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert captured_day == "Monday"
+    assert captured_meal == "Lunch"
+    assert data["applied_day"] == "Monday"
+    assert data["applied_meal"] == "Lunch"
+    assert data["recommendations"][0]["hours_url"].startswith("https://")
+
+
+def test_recommendations_rejects_invalid_day_override() -> None:
+    response = client.post(
+        "/api/recommendations",
+        json={
+            "keyword": "chicken",
+            "meal_filter": "Lunch",
+            "day_override": "Funday",
+            "max_results": 5,
+        },
+    )
+
+    assert response.status_code == 400
+    assert "day_override must be one of" in response.json()["detail"]

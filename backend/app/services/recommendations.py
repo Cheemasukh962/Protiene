@@ -2,6 +2,8 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from backend.app.services.day_filters import normalize_day_override
+from backend.app.services.day_filters import resolve_applied_day
 from backend.app.services.google_maps import geocode_address
 from backend.app.services.google_maps import route_distance_to_destination
 from backend.app.services.postgres_db import search_keyword_top_item_per_venue
@@ -112,6 +114,23 @@ async def build_recommendations(request: Any) -> dict:
         raise HTTPException(status_code=400, detail="per_hall_limit must be 5 or 10")
 
     keyword = request.keyword.strip()
+    meal_filter_raw = getattr(request, "meal_filter", None)
+    meal_filter = meal_filter_raw.strip().title() if isinstance(meal_filter_raw, str) else None
+    day_override_raw = getattr(request, "day_override", None)
+    if meal_filter and meal_filter not in {"Breakfast", "Lunch", "Dinner"}:
+        raise HTTPException(
+            status_code=400,
+            detail="meal_filter must be one of: Breakfast, Lunch, Dinner",
+        )
+    try:
+        day_override = normalize_day_override(day_override_raw)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    applied_day = day_override if day_override else resolve_applied_day(None)
+    applied_meal = meal_filter
+    apply_day_filter = applied_meal is not None or day_override is not None
+    response_applied_day = applied_day if apply_day_filter else None
 
     origin_resolved: str | None = None
     origin_latitude: float | None = None
@@ -120,7 +139,11 @@ async def build_recommendations(request: Any) -> dict:
         origin_latitude, origin_longitude, origin_resolved = await resolve_origin_coordinates(request)
 
     try:
-        matched_rows = await search_keyword_top_item_per_venue(keyword)
+        matched_rows = await search_keyword_top_item_per_venue(
+            keyword,
+            day_of_week=applied_day if apply_day_filter else None,
+            meal_filter=applied_meal,
+        )
     except RuntimeError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
 
@@ -131,6 +154,8 @@ async def build_recommendations(request: Any) -> dict:
             "travel_mode": request.travel_mode,
             "sort_mode": sort_mode,
             "result_mode": result_mode,
+            "applied_day": response_applied_day,
+            "applied_meal": applied_meal,
             "recommendations": [],
             "per_hall_recommendations": [],
             "message": "No matching protein options found.",
@@ -158,6 +183,7 @@ async def build_recommendations(request: Any) -> dict:
                 "item_name": row["item_name"],
                 "protein_grams": row["protein_grams"],
                 "calories": row.get("calories"),
+                "hours_url": row.get("hours_url"),
                 "tags": row["tags"],
                 "distance_miles": route_result.get("distance_miles"),
                 "duration": route_result.get("duration"),
@@ -204,6 +230,8 @@ async def build_recommendations(request: Any) -> dict:
             "travel_mode": request.travel_mode,
             "sort_mode": sort_mode,
             "result_mode": result_mode,
+            "applied_day": response_applied_day,
+            "applied_meal": applied_meal,
             "recommendations": ranked[: request.max_results],
             "per_hall_recommendations": [],
         }
@@ -228,6 +256,8 @@ async def build_recommendations(request: Any) -> dict:
         "travel_mode": request.travel_mode,
         "sort_mode": sort_mode,
         "result_mode": result_mode,
+        "applied_day": response_applied_day,
+        "applied_meal": applied_meal,
         "recommendations": [],
         "per_hall_recommendations": per_hall_recommendations,
     }

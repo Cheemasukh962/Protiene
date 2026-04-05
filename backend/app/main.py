@@ -10,6 +10,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pydantic import EmailStr
 
+from backend.app.config import COOKIE_SAMESITE
+from backend.app.config import COOKIE_SECURE
 from backend.app.config import CORS_ALLOWED_ORIGINS
 from backend.app.config import GOOGLE_MAPS_API_KEY
 from backend.app.services.auth import authenticate_user
@@ -23,6 +25,7 @@ from backend.app.services.favorites import get_or_create_guest_profile
 from backend.app.services.favorites import list_favorites_for_guest
 from backend.app.services.favorites import star_item_for_guest
 from backend.app.services.favorites import tracker_available_now_for_guest
+from backend.app.services.favorites import tracker_overview_for_guest
 from backend.app.services.favorites import tracker_schedule_for_guest
 from backend.app.services.google_maps import (
     geocode_address,
@@ -34,6 +37,7 @@ from backend.app.services.user_favorites import delete_favorite_for_user
 from backend.app.services.user_favorites import list_favorites_for_user
 from backend.app.services.user_favorites import star_item_for_user
 from backend.app.services.user_favorites import tracker_available_now_for_user
+from backend.app.services.user_favorites import tracker_overview_for_user
 from backend.app.services.user_favorites import tracker_schedule_for_user
 
 
@@ -69,6 +73,8 @@ class RecommendationRequest(BaseModel):
     origin_latitude: float | None = None
     origin_longitude: float | None = None
     origin_text: str | None = None
+    meal_filter: str | None = None
+    day_override: str | None = None
     keyword: str = ""
     travel_mode: str = "walking"
     max_results: int = 5
@@ -112,15 +118,19 @@ async def resolve_guest_profile_id(request: Request, response: Response) -> str:
             key=GUEST_COOKIE_NAME,
             value=guest_profile_id,
             httponly=True,
-            samesite="lax",
-            secure=False,
+            samesite=COOKIE_SAMESITE,
+            secure=COOKIE_SECURE,
             max_age=60 * 60 * 24 * 365,
+            path="/",
         )
     return guest_profile_id
 
 
 async def resolve_current_user(request: Request) -> dict:
-    return await get_current_user_from_request(request)
+    try:
+        return await get_current_user_from_request(request)
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
 
 
 @app.get("/api/health")
@@ -290,7 +300,10 @@ async def auth_login(payload: AuthLoginRequest, response: Response) -> dict:
     user = await authenticate_user(payload.email, payload.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    token = create_access_token(user["id"])
+    try:
+        token = create_access_token(user["id"])
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
     set_auth_cookie(response, token)
     return {"ok": True, "email": user["email"]}
 
@@ -354,6 +367,19 @@ async def tracker_schedule(request: Request, response: Response) -> dict:
     return await tracker_schedule_for_guest(guest_profile_id)
 
 
+@app.get("/api/tracker/overview")
+async def tracker_overview(
+    request: Request,
+    response: Response,
+    day_override: str | None = None,
+) -> dict:
+    guest_profile_id = await resolve_guest_profile_id(request, response)
+    try:
+        return await tracker_overview_for_guest(guest_profile_id, day_override=day_override)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 @app.post("/api/user/favorites/star")
 async def star_user_favorite_item(
     payload: FavoriteStarRequest,
@@ -393,3 +419,12 @@ async def user_tracker_available_now(request: Request) -> dict:
 async def user_tracker_schedule(request: Request) -> dict:
     user = await resolve_current_user(request)
     return await tracker_schedule_for_user(user["id"])
+
+
+@app.get("/api/user/tracker/overview")
+async def user_tracker_overview(request: Request, day_override: str | None = None) -> dict:
+    user = await resolve_current_user(request)
+    try:
+        return await tracker_overview_for_user(user["id"], day_override=day_override)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error

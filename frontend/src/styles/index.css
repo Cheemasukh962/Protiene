@@ -1,0 +1,49 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=DM+Mono:wght@400;500&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-brand-blue: #002855;
+  --color-brand-blue-mid: #1a3f6b;
+  --color-brand-blue-tint: #e8eef5;
+  --color-brand-gold: #daaa00;
+  --color-brand-gold-tint: #fdf5cc;
+  --color-brand-gold-dim: #9d7b00;
+
+  --color-surface-page: #f7f9fc;
+  --color-surface-white: #ffffff;
+  --color-border-default: #dde4ec;
+
+  --color-ink-primary: #0d1b2a;
+  --color-ink-2: #2e3d4f;
+  --color-ink-3: #5c6e7e;
+  --color-ink-4: #8fa0af;
+
+  --color-status-open-bg: #e6f5ec;
+  --color-status-open-text: #1a7a4a;
+  --color-status-warning-bg: #fff3da;
+  --color-status-warning-text: #c97200;
+  --color-status-error-bg: #fceaea;
+  --color-status-error-text: #b22222;
+  --color-status-info-bg: #e8eef5;
+  --color-status-info-text: #3a5f8a;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: "DM Sans", sans-serif;
+  background: var(--color-surface-page);
+  color: var(--color-ink-primary);
+}
+
+.mono-value {
+  font-family: "DM Mono", monospace;
+}

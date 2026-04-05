@@ -37,6 +37,13 @@ HALL_COORDS = {
     },
 }
 
+HALL_HOURS_URLS = {
+    "segundo": "https://housing.ucdavis.edu/dining/dining-commons/segundo/",
+    "tercero": "https://housing.ucdavis.edu/dining/dining-commons/tercero/",
+    "cuarto": "https://housing.ucdavis.edu/dining/dining-commons/cuarto/",
+    "latitude": "https://housing.ucdavis.edu/dining/dining-commons/latitude/",
+}
+
 
 async def _ensure_pool() -> Any:
     global _pool
@@ -51,7 +58,11 @@ async def _ensure_pool() -> Any:
     return _pool
 
 
-async def search_keyword_top_item_per_venue(keyword: str) -> list[dict]:
+async def search_keyword_top_item_per_venue(
+    keyword: str,
+    day_of_week: str | None = None,
+    meal_filter: str | None = None,
+) -> list[dict]:
     """
     Query imported dining-hall rows from public."TestData".
     Returns item-level candidates (deduped by hall + item) across all halls.
@@ -67,10 +78,13 @@ async def search_keyword_top_item_per_venue(keyword: str) -> list[dict]:
         LOWER(td.dining_hall) AS hall_key,
         td.item_name,
         MAX(td.protein_g) AS protein_g,
-        MAX(td.calories) AS calories
+        MAX(td.calories) AS calories,
+        MAX(td.source_url) AS source_url
       FROM public."TestData" td
       WHERE td.protein_g IS NOT NULL
         AND LOWER(td.dining_hall) = ANY($1::text[])
+        AND ($4::text IS NULL OR td.day_of_week = $4)
+        AND ($5::text IS NULL OR td.meal = $5)
         AND (
           $2 = ''
           OR LOWER(td.dining_hall) LIKE $3
@@ -79,7 +93,7 @@ async def search_keyword_top_item_per_venue(keyword: str) -> list[dict]:
         )
       GROUP BY LOWER(td.dining_hall), td.item_name
     )
-    SELECT hall_key, item_name, protein_g, calories
+    SELECT hall_key, item_name, protein_g, calories, source_url
     FROM normalized
     ORDER BY protein_g DESC, item_name ASC;
     """
@@ -88,7 +102,14 @@ async def search_keyword_top_item_per_venue(keyword: str) -> list[dict]:
 
     pool = await _ensure_pool()
     async with pool.acquire() as connection:
-        records = await connection.fetch(sql, hall_keys, keyword_clean, like_pattern)
+        records = await connection.fetch(
+            sql,
+            hall_keys,
+            keyword_clean,
+            like_pattern,
+            day_of_week,
+            meal_filter,
+        )
 
     output: list[dict] = []
     for record in records:
@@ -106,6 +127,7 @@ async def search_keyword_top_item_per_venue(keyword: str) -> list[dict]:
                 "calories": (
                     float(record["calories"]) if record["calories"] is not None else None
                 ),
+                "hours_url": record["source_url"] or HALL_HOURS_URLS.get(hall_key),
                 "tags": [],
             }
         )
