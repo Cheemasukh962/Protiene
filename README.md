@@ -286,23 +286,11 @@ If `TestData` is empty, recommendation and tracker endpoints cannot return real 
 - Route page loads distance/directions
 - Refresh keeps signed-in user session
 
-## Why Railway + Vercel
+## Railway + Vercel
 
 This split was chosen for clarity and scalability:
 
 - Railway: backend logic + persistent DB
 - Vercel: fast frontend deployment and delivery
 
-Operationally:
 
-- Backend/data updates are handled in Railway
-- UI updates are handled in Vercel
-
-This makes deployments cleaner and responsibilities easier to explain to reviewers.
-
-## Current Focus / Next Steps
-
-- Improve production reliability and observability
-- Add richer tracker notifications
-- Expand non-dining-hall menu sources
-- Continue polishing UI/UX and demo flow
