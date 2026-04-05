@@ -3,8 +3,8 @@
 # VIDEO DEMO : https://youtu.be/wsZswz_mpjo
 
 
-# Current Problem: IT TAKES A SECOND FOR A USER LOG IN TO REGISTER I WOULD SAY ABOUT 2 MINUTES NOT GOOD
-Works locally in terms of storing users but when brining it to vercel I am having problems
+# Current Problem: IT TAKES A SECOND FOR A USER LOG IN TO REGISTER 
+Works locally in terms of storing users sometimes has problems in vercel 
 
 DProtein is a full-stack project to help UC Davis students quickly find high-protein food options nearby.
 It combines location-aware ranking, route guidance, account auth, favorites, and a tracker view.
